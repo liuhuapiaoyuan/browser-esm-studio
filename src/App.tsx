@@ -197,14 +197,44 @@ function statusLabel(progress: AgentProgress | null, configured: boolean): strin
   }
 }
 
+function formatElementPickPrompt(
+  pick: {
+    tag: string;
+    id?: string;
+    className?: string;
+    text?: string;
+    selector?: string;
+    component?: string;
+    html?: string;
+  },
+  instruction: string,
+): string {
+  const lines = [
+    "请修改预览中用户选中的 UI 元素（指哪改哪）。",
+    "",
+    "选中元素：",
+    `- 标签: ${pick.tag}`,
+  ];
+  if (pick.component) lines.push(`- React 组件: ${pick.component}`);
+  if (pick.selector) lines.push(`- 选择器: ${pick.selector}`);
+  if (pick.id) lines.push(`- id: ${pick.id}`);
+  if (pick.className) lines.push(`- class: ${pick.className}`);
+  if (pick.text) lines.push(`- 文本: ${pick.text}`);
+  if (pick.html) lines.push("", "HTML:", "```html", pick.html, "```");
+  lines.push("", "修改要求：", instruction.trim());
+  return lines.join("\n");
+}
+
 function ChatPanel({
   sandbox,
   getPreviewErrors,
   getFiles,
+  submitRef,
 }: {
   sandbox: Sandbox;
   getPreviewErrors: () => string[];
   getFiles: () => FileMap;
+  submitRef?: { current: ((text: string) => void) | null };
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -391,6 +421,16 @@ function ChatPanel({
     }
   }
 
+  useEffect(() => {
+    if (!submitRef) return;
+    submitRef.current = (text: string) => {
+      void submit(null, text);
+    };
+    return () => {
+      submitRef.current = null;
+    };
+  });
+
   return (
     <aside className="chat-panel">
       <div className="chat-header">
@@ -537,6 +577,9 @@ function PreviewPane({
   showConsole,
   onToggleConsole,
   onClearLogs,
+  pickMode,
+  onPickMode,
+  onElementPicked,
 }: {
   sessionId: string;
   revision: number;
@@ -549,14 +592,68 @@ function PreviewPane({
   showConsole: boolean;
   onToggleConsole: () => void;
   onClearLogs: () => void;
+  pickMode: boolean;
+  onPickMode: (enabled: boolean) => void;
+  onElementPicked: (pick: {
+    tag: string;
+    id?: string;
+    className?: string;
+    text?: string;
+    selector?: string;
+    component?: string;
+    html?: string;
+  }) => void;
 }) {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   const widths: Record<Viewport, string> = { desktop: "100%", tablet: "820px", mobile: "390px" };
   const viewportLabel: Record<Viewport, string> = { desktop: "桌面", tablet: "平板", mobile: "手机" };
+
+  function postPickMode(enabled: boolean) {
+    iframeRef.current?.contentWindow?.postMessage(
+      { source: "browser-esm-studio", type: "pick-mode", enabled },
+      "*",
+    );
+  }
+
+  useEffect(() => {
+    postPickMode(pickMode);
+  }, [pickMode, revision]);
+
+  useEffect(() => {
+    function handleMessage(event: MessageEvent) {
+      const data = event.data;
+      if (data?.source !== "browser-esm-preview") return;
+      if (data.type === "ready" && pickMode) postPickMode(true);
+      if (data.type === "element-picked" && data.payload) {
+        onPickMode(false);
+        onElementPicked(data.payload);
+      }
+      if (data.type === "pick-cancelled") onPickMode(false);
+    }
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [pickMode, onPickMode, onElementPicked]);
+
   return (
     <section className="preview-pane">
       <div className="browser-bar">
         <div className="traffic"><i /><i /><i /></div>
-        <div className="address"><span className={`runtime-dot ${status}`} />preview.local/{sessionId}</div>
+        <div className="address-row">
+          <div className="address">
+            <span className={`runtime-dot ${status}`} />
+            <span>preview.local/{sessionId}</span>
+          </div>
+          <button
+            type="button"
+            className={`pick-button ${pickMode ? "active" : ""}`}
+            title="指哪改哪"
+            aria-label="指哪改哪"
+            aria-pressed={pickMode}
+            onClick={() => onPickMode(!pickMode)}
+          >
+            <Icon name="sparkle" size={14} />
+          </button>
+        </div>
         <div className="browser-actions">
           <div className="viewport-switcher">
             {(["desktop", "tablet", "mobile"] as const).map((item) => <button className={viewport === item ? "active" : ""} onClick={() => onViewport(item)} title={viewportLabel[item]} key={item}><Icon name={item} size={15} /></button>)}
@@ -565,10 +662,18 @@ function PreviewPane({
           <button onClick={onOpen} title="新窗口打开"><Icon name="external" size={15} /></button>
         </div>
       </div>
+      {pickMode && <div className="pick-banner">指哪改哪已开启 — 在预览中点击要改的元素，Esc 取消</div>}
       <div className="preview-canvas">
         {status === "error" ? <div className="preview-error"><strong>预览启动失败</strong><span>请查看控制台错误信息</span></div> : (
           <div className="device-frame" style={{ width: widths[viewport] }}>
-            {revision > 0 && <iframe title="项目预览" src={previewUrl(sessionId, revision)} sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-downloads" />}
+            {revision > 0 && (
+              <iframe
+                ref={iframeRef}
+                title="项目预览"
+                src={previewUrl(sessionId, revision)}
+                sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-downloads"
+              />
+            )}
           </div>
         )}
       </div>
@@ -600,6 +705,8 @@ export function App() {
   const [logs, setLogs] = useState<ConsoleLog[]>([]);
   const [showConsole, setShowConsole] = useState(false);
   const [typechecking, setTypechecking] = useState(false);
+  const [pickMode, setPickMode] = useState(false);
+  const agentSubmitRef = useRef<((text: string) => void) | null>(null);
 
   useEffect(() => sandbox.subscribe(setFiles), [sandbox]);
 
@@ -785,6 +892,7 @@ export function App() {
       <ChatPanel
         sandbox={sandbox}
         getFiles={() => files}
+        submitRef={agentSubmitRef}
         getPreviewErrors={() =>
           logsRef.current
             .filter((log) => log.level === "error" || log.level === "warn")
@@ -796,7 +904,7 @@ export function App() {
           <div className="project-title"><strong>Orbit 落地页</strong><span>已本地保存</span></div>
           <div className="workspace-tabs">
             <button className={mode === "preview" ? "active" : ""} onClick={() => setMode("preview")}><Icon name="eye" size={15} />预览</button>
-            <button className={mode === "code" ? "active" : ""} onClick={() => setMode("code")}><Icon name="code" size={15} />代码</button>
+            <button className={mode === "code" ? "active" : ""} onClick={() => { setPickMode(false); setMode("code"); }}><Icon name="code" size={15} />代码</button>
           </div>
           <div className="workspace-actions">
             <button className="ghost-button" disabled={typechecking} onClick={() => void runTypecheck()} title="浏览器内 TypeScript 检查">
@@ -824,6 +932,13 @@ export function App() {
               showConsole={showConsole}
               onToggleConsole={() => setShowConsole((value) => !value)}
               onClearLogs={() => setLogs([])}
+              pickMode={pickMode}
+              onPickMode={setPickMode}
+              onElementPicked={(pick) => {
+                const instruction = window.prompt("指哪改哪：想怎么改这个元素？");
+                if (!instruction?.trim()) return;
+                agentSubmitRef.current?.(formatElementPickPrompt(pick, instruction));
+              }}
             />
           )}
         </div>

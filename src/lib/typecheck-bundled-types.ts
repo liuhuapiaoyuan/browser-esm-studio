@@ -1,5 +1,5 @@
 /**
- * Host-bundled lib.d.ts + React DefinitelyTyped for browser typecheck.
+ * Host-bundled lib.d.ts + React DefinitelyTyped + dynamic-db-client for browser typecheck.
  * Avoids TypeScript playground CDN (404 on obsolete libs) and jsDelivr.
  */
 
@@ -39,8 +39,17 @@ const bundledReact = import.meta.glob(
   { query: "?raw", import: "default", eager: true },
 ) as Record<string, string>;
 
+// Explicit ?raw imports — glob+package.json is flaky in the browser bundle.
+import dynamicDbClientPkg from "../../node_modules/@qzsy/dynamic-db-client/package.json?raw";
+import dynamicDbClientIndex from "../../node_modules/@qzsy/dynamic-db-client/dist/index.d.ts?raw";
+import dynamicDbClientHttp from "../../node_modules/@qzsy/dynamic-db-client/dist/http.d.ts?raw";
+import dynamicDbClientTypes from "../../node_modules/@qzsy/dynamic-db-client/dist/types.d.ts?raw";
+import dynamicDbClientDelegate from "../../node_modules/@qzsy/dynamic-db-client/dist/delegate.d.ts?raw";
+import dynamicDbClientErrors from "../../node_modules/@qzsy/dynamic-db-client/dist/errors.d.ts?raw";
+
 let libCache: Map<string, string> | null = null;
 let reactCache: Map<string, string> | null = null;
+let dynamicDbClientCache: Map<string, string> | null = null;
 
 export function getBundledTsLibs(): Map<string, string> {
   libCache ??= mapFromGlob(bundledLibs, "lib");
@@ -50,4 +59,19 @@ export function getBundledTsLibs(): Map<string, string> {
 export function getBundledReactTypes(): Map<string, string> {
   reactCache ??= mapFromGlob(bundledReact, "node_modules");
   return reactCache;
+}
+
+/** Real `@qzsy/dynamic-db-client` .d.ts (not a hand-written stub). */
+export function getBundledDynamicDbClientTypes(): Map<string, string> {
+  if (!dynamicDbClientCache) {
+    dynamicDbClientCache = new Map([
+      ["/node_modules/@qzsy/dynamic-db-client/package.json", dynamicDbClientPkg],
+      ["/node_modules/@qzsy/dynamic-db-client/dist/index.d.ts", dynamicDbClientIndex],
+      ["/node_modules/@qzsy/dynamic-db-client/dist/http.d.ts", dynamicDbClientHttp],
+      ["/node_modules/@qzsy/dynamic-db-client/dist/types.d.ts", dynamicDbClientTypes],
+      ["/node_modules/@qzsy/dynamic-db-client/dist/delegate.d.ts", dynamicDbClientDelegate],
+      ["/node_modules/@qzsy/dynamic-db-client/dist/errors.d.ts", dynamicDbClientErrors],
+    ]);
+  }
+  return dynamicDbClientCache;
 }

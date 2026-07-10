@@ -105,9 +105,10 @@ export function createAutoFixTypecheckHook(options?: { maxRounds?: number }): Ag
 
     rounds += 1;
     api.followUp(
-      `${AUTO_FIX_PREFIX} TypeScript 类型检查失败，请修复（第 ${rounds}/${maxRounds} 次自动修复），不要改无关文件：\n${errorLines
-        .map((line) => `- ${line}`)
-        .join("\n")}`,
+      `${AUTO_FIX_PREFIX} TypeScript 类型检查失败，请修复（第 ${rounds}/${maxRounds} 次自动修复），不要改无关文件。` +
+        ` 提示：TS7006 给回调参数显式类型（如 (v: string) =>）；修好后可再调用 typecheck 确认。\n${errorLines
+          .map((line) => `- ${line}`)
+          .join("\n")}`,
     );
   };
 }

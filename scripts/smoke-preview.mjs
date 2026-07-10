@@ -93,6 +93,11 @@ assert.equal(extensionless.status, 200);
 const missing = await request("/__preview__/test/does-not-exist.tsx");
 assert.equal(missing.status, 404);
 
+// NodeNext: import './App.js' must resolve to App.tsx (ddb codegen style).
+const nodeNextJs = await request("/__preview__/test/src/App.js");
+assert.equal(nodeNextJs.status, 200);
+assert.match(await nodeNextJs.text(), /jsx-runtime|createElement|react/);
+
 // --- Path aliases + Tailwind browser runtime ---
 const shadcnFiles = {
   "index.html": "<html><head></head><body><div id=\"root\"></div><script type=\"module\" src=\"./src/main.tsx\"></script></body></html>",

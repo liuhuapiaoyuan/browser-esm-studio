@@ -198,7 +198,21 @@ button:disabled { cursor: not-allowed; opacity: .35; }
 .traffic i:first-child { background: #e46b65; }
 .traffic i:nth-child(2) { background: #d9ae5f; }
 .traffic i:nth-child(3) { background: #66ba76; }
-.address { width: min(430px, 80%); height: 26px; margin: auto; display: flex; align-items: center; justify-content: center; gap: 7px; color: #797d82; border: 1px solid #2a2d31; border-radius: 7px; background: #121316; font: 9px "JetBrains Mono", monospace; }
+.address-row { width: min(470px, 92%); margin: auto; display: flex; align-items: center; gap: 8px; }
+.address { flex: 1; min-width: 0; height: 26px; display: flex; align-items: center; justify-content: center; gap: 7px; color: #797d82; border: 1px solid #2a2d31; border-radius: 7px; background: #121316; font: 9px "JetBrains Mono", monospace; }
+.pick-button {
+  flex: 0 0 28px; width: 28px; height: 28px; display: grid; place-items: center;
+  color: #8a7a55; border: 1px solid #3a3428; border-radius: 8px;
+  background: linear-gradient(180deg, #2a261c 0%, #1c1a14 100%);
+  cursor: pointer; transition: color .15s ease, border-color .15s ease, background .15s ease, box-shadow .15s ease;
+}
+.pick-button:hover { color: #e6c878; border-color: #5a4e32; background: linear-gradient(180deg, #322e22 0%, #221e16 100%); }
+.pick-button.active {
+  color: #f0d78a; border-color: #7a6840;
+  background: linear-gradient(180deg, #3a3424 0%, #2a2418 100%);
+  box-shadow: 0 0 0 1px rgba(230,200,120,.18), 0 0 12px rgba(200,160,60,.18);
+}
+.pick-banner { flex: 0 0 auto; padding: 6px 12px; color: #d4c49a; background: #221e16; border-bottom: 1px solid #3a3428; font-size: 11px; text-align: center; }
 .runtime-dot { width: 5px; height: 5px; box-shadow: none; }
 .runtime-dot.syncing { background: #d9ae5f; animation: blink 1s infinite; }
 .runtime-dot.error { background: #e46b65; }

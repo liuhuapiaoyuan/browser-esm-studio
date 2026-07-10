@@ -6,6 +6,7 @@ import { createLanguageModel } from "./provider";
 import { createSandboxTools } from "./sandboxTools";
 import { createDdbTools } from "./ddbTools";
 import { createSkillTools } from "./skillTools";
+import { createTypecheckTools } from "./typecheckTools";
 import { buildSkillsPromptSection } from "./skills/registry";
 import { isAiConfigured, loadAiSettings, type AiSettings } from "./settings";
 
@@ -91,28 +92,64 @@ export type AgentResult = {
 
 const RUNTIME_RULES = `You are editing a pure-frontend virtual project previewed in the browser.
 
-Hard constraints:
-- There is NO Node server and NO local node_modules at runtime.
-- Dependencies must be declared in package.json; Preview resolves them via esm.sh import maps.
-- Prefer TypeScript / TSX. Use the @/ alias (maps to src/) or relative paths — never filesystem-absolute paths.
-- UI: reuse src/components/ui/* (shadcn-style). Add new primitives under that folder and declare any new @radix-ui/* deps in package.json.
-- Styling: Tailwind CSS v4 utilities + tokens in src/index.css. Preview injects @tailwindcss/browser — do not add a Node-only CSS build step for Preview.
-- index.html and package.json cannot be deleted.
-- Mutate files ONLY via the provided Sandbox tools.
-- Keep changes minimal and coherent with the existing design.
-- Preview runs at /__preview__/{sessionId}/index.html. If the app needs client-side routing, use HashRouter (or MemoryRouter). NEVER use BrowserRouter / createBrowserRouter — pathname will be the preview URL and routes will not match.
-- After edits, briefly confirm what changed.
+## Stack (always true — do not invent another stack)
+- Language: TypeScript strict + React 19 (react-jsx). Files are \`.ts\` / \`.tsx\`.
+- Bundler/runtime: Vite-style ESM preview. NO Node server, NO local node_modules at runtime.
+- Deps: declare in package.json; Preview resolves via esm.sh import maps. Never assume npm install ran.
+- Paths: \`@/\` → \`src/\`. Prefer \`@/...\` imports. Never use filesystem-absolute paths.
+- Import extensions: match existing style — local/alias imports usually include \`.ts\` / \`.tsx\` (see tsconfig allowImportingTsExtensions). Mirror neighbors; do not drop extensions inconsistently.
+- NOT Next.js / Remix / Expo: no \`next/*\`, no App Router, no RSC (\`"use client"\` unnecessary), no server actions, no \`process.env\` for secrets.
+- Routing: entry already wraps with HashRouter. Use \`react-router-dom\` routes under hash. NEVER BrowserRouter / createBrowserRouter (Preview path is \`/__preview__/...\`).
 
-Persistence / Dynamic DB:
-- For schema, seed, or admin CRUD: loadSkill("dynamic-db") then use the dynamicDb tool (projectId is auto-bound).
-- Preferred flow: setupSchema → dynamicDb codegen → readFile src/ddb/generated/index.ts (kindNames) → app code uses getDb() from src/lib/db.ts only.
+## UI (shadcn new-york)
+- Reuse ONLY components that already exist under \`src/components/ui/*\` (listed in project context). Import like \`@/components/ui/button.tsx\`.
+- Class merging: \`import { cn } from "@/lib/utils.ts"\`.
+- Icons: \`lucide-react\` only (already in package.json).
+- Missing primitive: add under \`src/components/ui/\` in the same shadcn/Radix style, and add any new \`@radix-ui/*\` dep to package.json. Do not invent APIs for components that are not in the file list.
+- Do not pull in other UI kits (MUI, Ant, Chakra, daisyUI, etc.).
+
+## Styling (Tailwind CSS v4)
+- Utilities + CSS variables / \`@theme inline\` tokens live in \`src/index.css\`.
+- Use semantic tokens: \`bg-background\`, \`text-foreground\`, \`bg-primary\`, \`text-muted-foreground\`, \`border-border\`, etc.
+- Preview injects \`@tailwindcss/browser\` — do NOT add PostCSS/tailwind.config.js Node build steps for Preview.
+- No \`@apply\` sprawl; prefer utility classes in JSX. Do not assume Tailwind v3 \`tailwind.config.ts\` exists.
+
+## TypeScript (strict — noImplicitAny)
+- Callbacks must be typed when inference fails. Never leave bare \`(v) =>\` / \`(item) =>\` / \`(e) =>\` if TS cannot infer.
+  - Select/Switch: \`(value: string) =>\`, \`(checked: boolean) =>\`
+  - DOM: \`(e: React.ChangeEvent<HTMLInputElement>) =>\`, \`(e: React.FormEvent<HTMLFormElement>) =>\`
+  - Arrays: type the array or annotate \`(row: Student) =>\`
+- Prefer named types / interfaces for form state and list rows; avoid \`any\` and untyped destructuring.
+- After editing \`.ts\` / \`.tsx\`, call the \`typecheck\` tool and fix errors (esp. TS7006) before finishing.
+
+## Sandbox / edits
+- Mutate files ONLY via Sandbox tools. \`index.html\` and \`package.json\` cannot be deleted.
+- Keep changes minimal and coherent with the existing design.
+- Before writing UI, readFile the target page and any \`src/components/ui/*\` you will import.
+- After edits, briefly confirm what changed (Chinese summary).
+
+## Persistence / Dynamic DB
+- Schema, seed, or admin CRUD: loadSkill("dynamic-db") then use the dynamicDb tool (projectId is auto-bound).
+- Flow: setupSchema → dynamicDb codegen → readFile src/ddb/generated/index.ts (kindNames) → app code uses getDb() from src/lib/db.ts only.
 - Never curl/fetch Dynamic DB HTTP or hand-write a second DB client.
 ${buildSkillsPromptSection()}`;
+
+function listUiComponents(sandbox: Sandbox): string[] {
+  return sandbox
+    .list()
+    .filter((path) => /^src\/components\/ui\/[^/]+\.tsx?$/.test(path))
+    .map((path) => path.replace(/^src\/components\/ui\//, "").replace(/\.tsx?$/, ""))
+    .sort();
+}
 
 function projectContext(sandbox: Sandbox): string {
   const files = sandbox.list();
   const packageJson = sandbox.exists("package.json") ? sandbox.read("package.json") : "(missing)";
-  return `Current files (${files.length}):\n${files.map((f) => `- ${f}`).join("\n")}\n\npackage.json:\n${packageJson}`;
+  const ui = listUiComponents(sandbox);
+  const uiBlock = ui.length
+    ? `Available shadcn UI components (src/components/ui):\n${ui.map((name) => `- ${name}`).join("\n")}`
+    : "Available shadcn UI components: (none yet — create under src/components/ui/ if needed)";
+  return `Current files (${files.length}):\n${files.map((f) => `- ${f}`).join("\n")}\n\n${uiBlock}\n\npackage.json:\n${packageJson}`;
 }
 
 function collectChangedPaths(
@@ -217,7 +254,8 @@ export async function runPlanExecutorAgent(
 
 You are the Planner. Call submitPlan with a concrete, ordered implementation plan.
 Do not write code yet. Prefer small steps that map to Sandbox tool calls.
-Inspect the file list and package.json context carefully.
+Inspect the file list, available UI components, and package.json carefully.
+Plan only against the Stack above (React 19 + TS + shadcn ui + Tailwind v4 + HashRouter) — never Next.js or other kits.
 If preview console errors are provided, prioritize fixing them when the user asks to fix bugs or the errors block the request.`,
     prompt: `User request:\n${prompt}${historyBlock}${previewErrorBlock}\n\nProject context:\n${projectContext(sandbox)}`,
   });
@@ -238,20 +276,24 @@ If preview console errors are provided, prioritize fixing them when the user ask
     ...createSandboxTools(sandbox),
     ...createSkillTools(),
     ...createDdbTools(sandbox),
+    ...createTypecheckTools(sandbox),
   };
   const executor = new ToolLoopAgent({
     model,
     instructions: `${RUNTIME_RULES}
 
-You are the Executor. Implement the given plan using Sandbox tools (and dynamicDb / loadSkill when persistence is needed).
+You are the Executor. Implement the given plan using Sandbox tools (and dynamicDb / loadSkill / typecheck when needed).
 Workflow:
 1. listFiles / readFile / grep to inspect before writing.
    - Prefer grep with fuzzy=true when the exact symbol/string is uncertain.
    - Use glob (e.g. **/*.{ts,tsx}) to narrow search; regex=true for precise patterns.
+   - Before importing a UI primitive, confirm it is in the available components list (or add it under src/components/ui/).
 2. Prefer replaceInFile for surgical edits; writeFile/addFile for new or full rewrites.
 3. Use applyOperations for multi-file atomic batches.
-4. Persistence: loadSkill dynamic-db → dynamicDb setupSchema → dynamicDb codegen → getDb() in app code.
-5. When done, reply with a short Chinese summary of what you changed.`,
+4. Match existing import style (@/… with .tsx extensions, cn(), lucide-react, HashRouter). Annotate callback params under strict TS.
+5. Persistence: loadSkill dynamic-db → dynamicDb setupSchema → dynamicDb codegen → getDb() in app code.
+6. After .ts/.tsx edits: call typecheck. If ok=false, fix diagnostics (especially TS7006 implicit any) and typecheck again before finishing.
+7. When done, reply with a short Chinese summary of what you changed.`,
     tools,
     stopWhen: isStepCount(40),
     onToolExecutionStart({ toolCall }) {

@@ -96,6 +96,15 @@ async function readSource(sessionId, path) {
     `${path}/index.mjs`,
   ];
 
+  // NodeNext / TypeScript: import './foo.js' resolves to foo.ts on disk.
+  if (/\.js$/i.test(path)) {
+    const base = path.slice(0, -3);
+    candidates.push(`${base}.tsx`, `${base}.ts`, `${base}.jsx`, `${base}.mjs`);
+  } else if (/\.mjs$/i.test(path)) {
+    const base = path.slice(0, -4);
+    candidates.push(`${base}.mts`, `${base}.ts`);
+  }
+
   for (const candidate of candidates) {
     const response = await cache.match(sourceUrl(sessionId, candidate));
     if (response) return { path: cleanPath(candidate), source: await response.text() };
@@ -321,6 +330,102 @@ function bridgeScript() {
     }));
     addEventListener("unhandledrejection", (event) => send("error", { message: normalize(event.reason), stack: event.reason?.stack || "" }));
     addEventListener("DOMContentLoaded", () => send("ready", { title: document.title }));
+
+    // ponytail: iframe pick mode — host toggles via postMessage; no react-grab (no source maps in SW preview)
+    let pickOn = false;
+    let hoverEl = null;
+    const box = document.createElement("div");
+    box.setAttribute("data-preview-pick", "1");
+    Object.assign(box.style, {
+      position: "fixed", pointerEvents: "none", zIndex: "2147483647",
+      border: "2px solid #5b8cff", background: "rgba(91,140,255,.12)",
+      borderRadius: "4px", display: "none", boxSizing: "border-box",
+    });
+    const ensureBox = () => { if (!box.isConnected) document.documentElement.appendChild(box); };
+    const placeBox = (el) => {
+      if (!el || el === document.documentElement || el === document.body) { box.style.display = "none"; return; }
+      const r = el.getBoundingClientRect();
+      Object.assign(box.style, {
+        display: "block", top: r.top + "px", left: r.left + "px",
+        width: Math.max(r.width, 2) + "px", height: Math.max(r.height, 2) + "px",
+      });
+    };
+    const cssPath = (el) => {
+      const parts = [];
+      let node = el;
+      while (node && node.nodeType === 1 && parts.length < 6) {
+        if (node.id) { parts.unshift("#" + CSS.escape(node.id)); break; }
+        let part = node.tagName.toLowerCase();
+        const parent = node.parentElement;
+        if (parent) {
+          const same = [...parent.children].filter((c) => c.tagName === node.tagName);
+          if (same.length > 1) part += ":nth-of-type(" + (same.indexOf(node) + 1) + ")";
+        }
+        const cls = [...(node.classList || [])].slice(0, 3).map((c) => CSS.escape(c)).join(".");
+        if (cls) part += "." + cls;
+        parts.unshift(part);
+        if (node === document.body) break;
+        node = parent;
+      }
+      return parts.join(" > ");
+    };
+    const reactName = (el) => {
+      const key = Object.keys(el).find((k) => k.startsWith("__reactFiber$") || k.startsWith("__reactInternalInstance$"));
+      if (!key) return "";
+      let fiber = el[key];
+      for (let i = 0; i < 12 && fiber; i += 1) {
+        const t = fiber.type;
+        if (typeof t === "function" && t.name && t.name !== "Fragment") return t.name;
+        if (t && typeof t === "object" && (t.displayName || t.name)) return t.displayName || t.name;
+        fiber = fiber.return;
+      }
+      return "";
+    };
+    const describe = (el) => {
+      const html = (el.outerHTML || "").replace(/\\s+/g, " ").trim().slice(0, 1800);
+      return {
+        tag: el.tagName.toLowerCase(),
+        id: el.id || "",
+        className: typeof el.className === "string" ? el.className : "",
+        text: (el.innerText || "").trim().slice(0, 240),
+        selector: cssPath(el),
+        component: reactName(el),
+        html,
+      };
+    };
+    const setPick = (on) => {
+      pickOn = !!on;
+      document.documentElement.style.cursor = pickOn ? "crosshair" : "";
+      if (!pickOn) { hoverEl = null; box.style.display = "none"; }
+      else ensureBox();
+    };
+    addEventListener("message", (event) => {
+      const data = event.data;
+      if (!data || data.source !== "browser-esm-studio") return;
+      if (data.type === "pick-mode") setPick(data.enabled);
+    });
+    addEventListener("pointermove", (event) => {
+      if (!pickOn) return;
+      const el = document.elementFromPoint(event.clientX, event.clientY);
+      if (!el || el === box || el.getAttribute?.("data-preview-pick")) return;
+      hoverEl = el;
+      placeBox(el);
+    }, true);
+    addEventListener("click", (event) => {
+      if (!pickOn) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const el = hoverEl || document.elementFromPoint(event.clientX, event.clientY);
+      if (!el || el === document.documentElement || el === document.body) return;
+      send("element-picked", describe(el));
+      setPick(false);
+    }, true);
+    addEventListener("keydown", (event) => {
+      if (pickOn && event.key === "Escape") {
+        setPick(false);
+        send("pick-cancelled");
+      }
+    }, true);
   })();
   </script>`;
 }

@@ -19,6 +19,19 @@ type TsModule = typeof import("typescript-browser/lib/typescript.js");
 
 const CATEGORY = ["warning", "error", "suggestion", "message"] as const;
 
+/**
+ * Style / import-elision diagnostics. Studio typecheck treats these as warnings
+ * so agents don't thrash on `import` vs `import type` (TS1484 etc.).
+ */
+const SOFT_DIAGNOSTIC_CODES = new Set([
+  1484, // type-only import required when verbatimModuleSyntax is enabled
+  1205, // re-exporting a type requires `export type` under isolatedModules
+]);
+
+function isGeneratedPath(path: string): boolean {
+  return /(^|\/)ddb\/generated\//.test(path.replaceAll("\\", "/"));
+}
+
 /** Cache lib maps keyed by TS version + target. */
 const libMapCache = new Map<string, Map<string, string>>();
 
@@ -55,6 +68,7 @@ function compilerOptionsFromTsConfig(ts: TsModule, source: string | undefined) {
     esModuleInterop: true,
     allowJs: false,
     forceConsistentCasingInFileNames: true,
+    verbatimModuleSyntax: false,
   };
 
   if (!source?.trim()) return defaults;
@@ -73,6 +87,8 @@ function compilerOptionsFromTsConfig(ts: TsModule, source: string | undefined) {
     lib: converted.options.lib?.length ? converted.options.lib : defaults.lib,
     noEmit: true,
     skipLibCheck: true,
+    // Studio Preview uses Sucrase, not tsc emit — don't fail on import-elision style.
+    verbatimModuleSyntax: false,
   };
 }
 
@@ -95,13 +111,13 @@ async function loadLibsFromNodeModules(): Promise<Map<string, string> | null> {
   }
 }
 
-async function loadReactTypesFromNodeModules(): Promise<Map<string, string>> {
+async function loadPackageTypesFromNodeModules(packages: string[]): Promise<Map<string, string>> {
   const out = new Map<string, string>();
   if (typeof window !== "undefined") return out;
   try {
     const fs = await import("node:fs/promises");
     const path = await import("node:path");
-    for (const pkg of ["@types/react", "@types/react-dom", "csstype"]) {
+    for (const pkg of packages) {
       const root = path.join(process.cwd(), "node_modules", ...pkg.split("/"));
       const stat = await fs.stat(root).catch(() => null);
       if (!stat?.isDirectory()) continue;
@@ -109,8 +125,10 @@ async function loadReactTypesFromNodeModules(): Promise<Map<string, string>> {
         for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
           const rel = `${prefix}/${entry.name}`;
           const full = path.join(dir, entry.name);
-          if (entry.isDirectory()) await walk(full, rel);
-          else if (entry.name.endsWith(".d.ts") || entry.name === "package.json") {
+          if (entry.isDirectory()) {
+            if (entry.name === "node_modules") continue;
+            await walk(full, rel);
+          } else if (entry.name.endsWith(".d.ts") || entry.name === "package.json") {
             out.set(`/node_modules/${pkg}${rel}`, await fs.readFile(full, "utf8"));
           }
         }
@@ -127,10 +145,20 @@ async function acquireDependencyTypes(deps: string[]): Promise<Map<string, strin
   const out = new Map<string, string>();
 
   if (typeof window !== "undefined") {
-    const { getBundledReactTypes } = await import("./typecheck-bundled-types");
+    const { getBundledReactTypes, getBundledDynamicDbClientTypes } = await import(
+      "./typecheck-bundled-types"
+    );
     for (const [path, source] of getBundledReactTypes()) out.set(path, source);
+    for (const [path, source] of getBundledDynamicDbClientTypes()) out.set(path, source);
   } else {
-    for (const [path, source] of await loadReactTypesFromNodeModules()) out.set(path, source);
+    for (const [path, source] of await loadPackageTypesFromNodeModules([
+      "@types/react",
+      "@types/react-dom",
+      "csstype",
+      "@qzsy/dynamic-db-client",
+    ])) {
+      out.set(path, source);
+    }
   }
 
   // Richer stubs for shadcn-style deps so `import type { … }` works under skipLibCheck.
@@ -174,7 +202,7 @@ export declare function cva(
   };
 
   // Ambient stubs for other runtime deps (lucide-react, xlsx, …). No CDN.
-  const neverStub = new Set(["react", "react-dom", "csstype"]);
+  const neverStub = new Set(["react", "react-dom", "csstype", "@qzsy/dynamic-db-client"]);
   for (const dep of deps) {
     if (neverStub.has(dep)) continue;
     if (dep.startsWith("@types/")) continue;
@@ -249,9 +277,13 @@ export async function typecheckProject(files: FileMap): Promise<TypecheckResult>
   const depTypes = await acquireDependencyTypes(parsePackageDeps(files["package.json"]));
   for (const [path, source] of depTypes) map.set(path, source);
 
+  // VFS + sandbox `baseUrl: "."` breaks node_modules resolution; pin absolute paths.
+  options.baseUrl = "/";
+  const pathMap: Record<string, string[]> = {
+    "@/*": ["/src/*"],
+  };
   if (map.has("/node_modules/@types/react/jsx-runtime.d.ts")) {
-    options.paths = {
-      ...(options.paths || {}),
+    Object.assign(pathMap, {
       react: ["/node_modules/@types/react/index.d.ts"],
       "react/*": ["/node_modules/@types/react/*"],
       "react/jsx-runtime": ["/node_modules/@types/react/jsx-runtime.d.ts"],
@@ -259,9 +291,14 @@ export async function typecheckProject(files: FileMap): Promise<TypecheckResult>
       "react-dom": ["/node_modules/@types/react-dom/index.d.ts"],
       "react-dom/*": ["/node_modules/@types/react-dom/*"],
       "react-dom/client": ["/node_modules/@types/react-dom/client.d.ts"],
-    };
-    options.baseUrl = options.baseUrl || "/";
+    });
   }
+  if (map.has("/node_modules/@qzsy/dynamic-db-client/dist/index.d.ts")) {
+    // Avoid resolving to a stale `/node_modules/@qzsy/dynamic-db-client/index` stub.
+    map.delete("/node_modules/@qzsy/dynamic-db-client/index.d.ts");
+    pathMap["@qzsy/dynamic-db-client"] = ["/node_modules/@qzsy/dynamic-db-client/dist/index.d.ts"];
+  }
+  options.paths = pathMap;
 
   const rootNames = rootNamesFromFiles(files);
   if (rootNames.length === 0) {
@@ -294,26 +331,32 @@ export async function typecheckProject(files: FileMap): Promise<TypecheckResult>
     ...program.getConfigFileParsingDiagnostics(),
   ];
 
-  const formatted: TypecheckDiagnostic[] = diagnostics.map((diagnostic) => {
-    const message = ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n");
-    let path = "";
-    let line = 1;
-    let column = 1;
-    if (diagnostic.file && diagnostic.start != null) {
-      path = diagnostic.file.fileName.replace(/^\//, "");
-      const pos = diagnostic.file.getLineAndCharacterOfPosition(diagnostic.start);
-      line = pos.line + 1;
-      column = pos.character + 1;
-    }
-    return {
-      path,
-      line,
-      column,
-      message,
-      code: diagnostic.code,
-      category: CATEGORY[diagnostic.category] || "error",
-    };
-  });
+  const formatted: TypecheckDiagnostic[] = diagnostics
+    .map((diagnostic) => {
+      const message = ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n");
+      let path = "";
+      let line = 1;
+      let column = 1;
+      if (diagnostic.file && diagnostic.start != null) {
+        path = diagnostic.file.fileName.replace(/^\//, "");
+        const pos = diagnostic.file.getLineAndCharacterOfPosition(diagnostic.start);
+        line = pos.line + 1;
+        column = pos.character + 1;
+      }
+      const rawCategory = CATEGORY[diagnostic.category] || "error";
+      const category =
+        rawCategory === "error" && SOFT_DIAGNOSTIC_CODES.has(diagnostic.code) ? "warning" : rawCategory;
+      return {
+        path,
+        line,
+        column,
+        message,
+        code: diagnostic.code,
+        category,
+      };
+    })
+    // Host-generated SDK — trust codegen; don't surface or auto-fix its diagnostics.
+    .filter((item) => !isGeneratedPath(item.path));
 
   const errors = formatted.filter((item) => item.category === "error");
   return {

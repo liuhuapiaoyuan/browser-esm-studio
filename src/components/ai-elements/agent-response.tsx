@@ -274,6 +274,7 @@ const TOOL_LABELS: Record<string, string> = {
   readFile: "读取文件",
   removeFile: "删除文件",
   replaceInFile: "编辑文件",
+  typecheck: "类型检查",
   writeFile: "写入文件",
 };
 
