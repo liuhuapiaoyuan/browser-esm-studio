@@ -13,11 +13,13 @@
     "test:preview": "bun scripts/smoke-preview.mjs",
     "test:typecheck": "bun scripts/smoke-typecheck.mjs",
     "test:agent-ui": "bun scripts/smoke-agent-ui.mjs",
-    "test": "bun run test:sandbox && bun run test:preview && bun run test:typecheck && bun run test:agent-ui",
+    "test:ddb": "bun scripts/smoke-ddb.mjs",
+    "test": "bun run test:sandbox && bun run test:preview && bun run test:typecheck && bun run test:agent-ui && bun run test:ddb",
     "postinstall": "bun run build:runtime"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^3.0.7",
+    "@qzsy/dynamic-db-client": "^0.1.1",
     "@typescript/vfs": "^1.6.4",
     "ai": "^7.0.19",
     "ai-elements": "^1.9.0",
@@ -27,6 +29,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@qzsy/dynamic-db-cli": "^0.1.2",
     "@types/node": "^26.1.1",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",

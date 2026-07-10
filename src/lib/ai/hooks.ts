@@ -112,5 +112,39 @@ export function createAutoFixTypecheckHook(options?: { maxRounds?: number }): Ag
   };
 }
 
+/** Call from a user gesture (e.g. Send) so Chrome can show the permission prompt. */
+export function requestAgentNotifyPermission(): void {
+  if (typeof Notification === "undefined") return;
+  if (Notification.permission !== "default") return;
+  void Notification.requestPermission();
+}
+
+/** Notify via Chrome/browser Notification when an agent turn finishes. */
+export function createNotifyCompleteHook(): AgentHook {
+  return async (event) => {
+    if (event.name !== "agent:complete" || event.aborted) return;
+    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+
+    const changed = event.result.changed.length;
+    const summary = event.result.plan.summary || event.result.reply || "任务已完成";
+    const body = changed > 0 ? `${summary}\n已改 ${changed} 个文件` : summary;
+
+    try {
+      const notification = new Notification("ESM Studio · 任务完成", {
+        body: body.slice(0, 180),
+        tag: "esm-studio-agent-complete",
+        renotify: true,
+      });
+      notification.onclick = () => {
+        window.focus();
+        notification.close();
+      };
+    } catch {
+      // Notification constructor can throw if permission flipped mid-flight.
+    }
+  };
+}
+
 registerAgentHook(createAutoFixRuntimeHook());
 registerAgentHook(createAutoFixTypecheckHook());
+registerAgentHook(createNotifyCompleteHook());

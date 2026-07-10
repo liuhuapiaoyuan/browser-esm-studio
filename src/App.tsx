@@ -2,11 +2,17 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import { AgentResponse } from "./components/ai-elements/agent-response";
 import { DEFAULT_FILES } from "./defaultProject";
 import { AGENT_SUGGESTIONS, formatAgentError, runPlanExecutorAgent, type AgentProgress } from "./lib/ai/agent";
-import { runAgentHooks } from "./lib/ai/hooks";
+import { requestAgentNotifyPermission, runAgentHooks } from "./lib/ai/hooks";
 import { isAiConfigured, loadAiSettings, saveAiSettings, type AiSettings } from "./lib/ai/settings";
 import { buildFileTree, fileLanguage, normalizePath, type TreeNode } from "./lib/path";
 import { previewUrl, syncPreviewProject } from "./lib/preview";
 import { createSandbox, SandboxError, type Sandbox } from "./lib/sandbox";
+import {
+  ensureDdbProject,
+  ensureDdbStack,
+  getDynamicDbUserId,
+  resolveDynamicDbUserRoles,
+} from "./database";
 import { formatTypecheckDiagnostics, typecheckProject } from "./lib/typecheck";
 import { downloadProjectZip } from "./lib/zip";
 import type {
@@ -562,7 +568,7 @@ function PreviewPane({
       <div className="preview-canvas">
         {status === "error" ? <div className="preview-error"><strong>预览启动失败</strong><span>请查看控制台错误信息</span></div> : (
           <div className="device-frame" style={{ width: widths[viewport] }}>
-            {revision > 0 && <iframe title="项目预览" src={previewUrl(sessionId, revision)} sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups" />}
+            {revision > 0 && <iframe title="项目预览" src={previewUrl(sessionId, revision)} sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-downloads" />}
           </div>
         )}
       </div>
@@ -596,6 +602,40 @@ export function App() {
   const [typechecking, setTypechecking] = useState(false);
 
   useEffect(() => sandbox.subscribe(setFiles), [sandbox]);
+
+  useEffect(() => {
+    requestAgentNotifyPermission();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const projectId = await ensureDdbProject();
+        if (cancelled) return;
+        ensureDdbStack(sandbox, {
+          projectId,
+          userId: getDynamicDbUserId(),
+          roles: resolveDynamicDbUserRoles(),
+        });
+      } catch (error) {
+        if (cancelled) return;
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn("[ddb] ensure failed:", message);
+        setLogs((current) => [
+          ...current.slice(-99),
+          {
+            level: "warn",
+            message: `Dynamic DB 初始化失败: ${message}`,
+            time: new Date().toLocaleTimeString(),
+          },
+        ]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [sandbox]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(files));

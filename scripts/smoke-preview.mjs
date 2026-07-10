@@ -93,6 +93,46 @@ assert.equal(extensionless.status, 200);
 const missing = await request("/__preview__/test/does-not-exist.tsx");
 assert.equal(missing.status, 404);
 
+// --- Path aliases + Tailwind browser runtime ---
+const shadcnFiles = {
+  "index.html": "<html><head></head><body><div id=\"root\"></div><script type=\"module\" src=\"./src/main.tsx\"></script></body></html>",
+  "package.json": JSON.stringify({
+    dependencies: { react: "^19.1.0", "react-dom": "^19.1.0", clsx: "^2.1.1", "tailwind-merge": "^3.0.2" },
+    devDependencies: { tailwindcss: "^4.0.14", "@tailwindcss/vite": "^4.0.14", typescript: "~5.7.3", vite: "latest" },
+  }),
+  "tsconfig.json": JSON.stringify({
+    compilerOptions: {
+      baseUrl: ".",
+      paths: { "@/*": ["./src/*"] },
+    },
+  }),
+  "src/main.tsx": "import { App } from '@/App.tsx';\nimport '@/index.css';\nexport { App };",
+  "src/App.tsx": "export function App() { return <h1 className=\"text-3xl font-bold\">hi</h1>; }",
+  "src/index.css": "@import \"tailwindcss\";\n\n@theme {\n  --color-brand: #22c55e;\n}\n\nbody { margin: 0; }\n",
+};
+
+await new Promise((resolve, reject) => {
+  messageHandler({
+    data: { type: "SYNC_PREVIEW_PROJECT", sessionId: "shadcn", files: shadcnFiles },
+    ports: [{ postMessage: (message) => (message.ok ? resolve() : reject(new Error(message.error))) }],
+    waitUntil: (promise) => promise.catch(reject),
+  });
+});
+
+const shadcnHtml = await request("/__preview__/shadcn/index.html");
+const shadcnHtmlSource = await shadcnHtml.text();
+assert.equal(shadcnHtml.status, 200);
+assert.match(shadcnHtmlSource, /"@\/"\s*:\s*"\.\/src\/"/);
+assert.match(shadcnHtmlSource, /@tailwindcss\/browser@4/);
+assert.doesNotMatch(shadcnHtmlSource, /tailwindcss@4/);
+
+const twCss = await request("/__preview__/shadcn/src/index.css?__preview_css__");
+assert.equal(twCss.status, 200);
+const twCssSource = await twCss.text();
+assert.match(twCssSource, /text\/tailwindcss/);
+assert.doesNotMatch(twCssSource, /@import\s+["']tailwindcss["']/);
+assert.match(twCssSource, /@theme/);
+
 await new Promise((resolve, reject) => {
   messageHandler({
     data: {

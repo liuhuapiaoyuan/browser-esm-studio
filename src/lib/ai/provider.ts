@@ -1,6 +1,62 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { extractReasoningMiddleware, wrapLanguageModel, type LanguageModel } from "ai";
+import {
+  extractReasoningMiddleware,
+  wrapLanguageModel,
+  type LanguageModel,
+  type LanguageModelMiddleware,
+} from "ai";
 import { loadAiSettings, type AiSettings } from "./settings";
+
+/**
+ * MiniMax Interleaved Thinking (M2.x / M3):
+ * After a tool round, the assistant message must still contain the original
+ * `<think>…</think>` block in `content`. extractReasoningMiddleware strips it
+ * into `reasoning` parts for the UI; this middleware puts it back before the
+ * next request so the thinking chain is not broken.
+ */
+function preserveThinkTagsMiddleware(): LanguageModelMiddleware {
+  return {
+    specificationVersion: "v4",
+    transformParams: async ({ params }) => {
+      const prompt = params.prompt.map((message) => {
+        if (message.role !== "assistant" || !Array.isArray(message.content)) {
+          return message;
+        }
+
+        const reasoningTexts = message.content
+          .filter(
+            (part): part is { type: "reasoning"; text: string } =>
+              part.type === "reasoning" && typeof (part as { text?: unknown }).text === "string",
+          )
+          .map((part) => part.text.trim())
+          .filter(Boolean);
+        if (!reasoningTexts.length) return message;
+
+        const rest = message.content.filter((part) => part.type !== "reasoning");
+        const alreadyTagged = rest.some(
+          (part) => part.type === "text" && part.text.includes("<think>"),
+        );
+        if (alreadyTagged) return { ...message, content: rest };
+
+        const block = `<think>\n${reasoningTexts.join("\n\n")}\n</think>\n\n`;
+        const textIndex = rest.findIndex((part) => part.type === "text");
+        if (textIndex >= 0) {
+          const textPart = rest[textIndex] as { type: "text"; text: string };
+          const next = [...rest];
+          next[textIndex] = { ...textPart, text: block + textPart.text };
+          return { ...message, content: next };
+        }
+
+        return {
+          ...message,
+          content: [{ type: "text" as const, text: block }, ...rest],
+        };
+      });
+
+      return { ...params, prompt };
+    },
+  };
+}
 
 export function createLanguageModel(settings: AiSettings = loadAiSettings()): LanguageModel {
   const baseURL = settings.baseURL.replace(/\/+$/, "");
@@ -13,9 +69,12 @@ export function createLanguageModel(settings: AiSettings = loadAiSettings()): La
   });
   return wrapLanguageModel({
     model: provider.chatModel(settings.model),
-    middleware: extractReasoningMiddleware({
-      tagName: "think",
-      separator: "\n\n",
-    }),
+    middleware: [
+      preserveThinkTagsMiddleware(),
+      extractReasoningMiddleware({
+        tagName: "think",
+        separator: "\n\n",
+      }),
+    ],
   });
 }

@@ -133,6 +133,46 @@ async function acquireDependencyTypes(deps: string[]): Promise<Map<string, strin
     for (const [path, source] of await loadReactTypesFromNodeModules()) out.set(path, source);
   }
 
+  // Richer stubs for shadcn-style deps so `import type { … }` works under skipLibCheck.
+  const knownStubs: Record<string, string> = {
+    clsx: `export type ClassValue =
+  | string
+  | number
+  | bigint
+  | boolean
+  | null
+  | undefined
+  | ClassDictionary
+  | ClassArray;
+export interface ClassDictionary {
+  [id: string]: any;
+}
+export interface ClassArray extends Array<ClassValue> {}
+export declare function clsx(...inputs: ClassValue[]): string;
+export default clsx;
+`,
+    "tailwind-merge": `export declare function twMerge(
+  ...classLists: Array<string | undefined | null | false | 0>
+): string;
+`,
+    "class-variance-authority": `import type { ClassValue } from "clsx";
+
+export type VariantProps<Component extends (...args: any) => any> = Omit<
+  NonNullable<Parameters<Component>[0]>,
+  "class" | "className"
+>;
+
+export declare function cva(
+  base?: ClassValue,
+  config?: {
+    variants?: Record<string, Record<string, ClassValue>>;
+    defaultVariants?: Record<string, string | number | boolean | null>;
+    compoundVariants?: Array<Record<string, any>>;
+  },
+): (props?: Record<string, any>) => string;
+`,
+  };
+
   // Ambient stubs for other runtime deps (lucide-react, xlsx, …). No CDN.
   const neverStub = new Set(["react", "react-dom", "csstype"]);
   for (const dep of deps) {
@@ -141,10 +181,10 @@ async function acquireDependencyTypes(deps: string[]): Promise<Map<string, strin
     const hasTypes = [...out.keys()].some(
       (path) => path.startsWith(`/node_modules/${dep}/`) || path.startsWith(`/node_modules/@types/${dep}/`),
     );
-    if (!hasTypes) {
-      out.set(`/node_modules/${dep}/index.d.ts`, `declare module ${JSON.stringify(dep)};\n`);
-      out.set(`/node_modules/${dep}/package.json`, JSON.stringify({ name: dep, types: "index.d.ts" }));
-    }
+    if (hasTypes) continue;
+
+    out.set(`/node_modules/${dep}/index.d.ts`, knownStubs[dep] ?? `declare module ${JSON.stringify(dep)};\n`);
+    out.set(`/node_modules/${dep}/package.json`, JSON.stringify({ name: dep, types: "index.d.ts" }));
   }
 
   return out;

@@ -1,27 +1,70 @@
-import { APICallError, isStepCount, streamText, tool, ToolLoopAgent } from "ai";
+import { APICallError, generateText, isStepCount, tool, ToolLoopAgent } from "ai";
 import { z } from "zod";
 import type { Sandbox } from "../sandbox";
 import type { AgentToolActivity } from "../../types";
 import { createLanguageModel } from "./provider";
 import { createSandboxTools } from "./sandboxTools";
+import { createDdbTools } from "./ddbTools";
+import { createSkillTools } from "./skillTools";
+import { buildSkillsPromptSection } from "./skills/registry";
 import { isAiConfigured, loadAiSettings, type AiSettings } from "./settings";
+
+const planStepSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  detail: z.string().describe("What to change and why"),
+  files: z.array(z.string()).optional(),
+});
 
 const planSchema = z.object({
   summary: z.string().describe("One-sentence plan summary for the user"),
-  steps: z
-    .array(
-      z.object({
-        id: z.string(),
-        title: z.string(),
-        detail: z.string().describe("What to change and why"),
-        files: z.array(z.string()).optional(),
-      }),
-    )
-    .min(1)
-    .max(12),
+  steps: z.array(planStepSchema).min(1).max(12),
 });
 
 export type AgentPlan = z.infer<typeof planSchema>;
+
+/** MiniMax often breaks nested streaming tool JSON — never block the agent on that. */
+function fallbackPlan(userPrompt: string): AgentPlan {
+  const summary = userPrompt.trim().slice(0, 160) || "实现用户请求";
+  return {
+    summary,
+    steps: [{ id: "1", title: "实现请求", detail: summary }],
+  };
+}
+
+function coercePlan(raw: unknown): AgentPlan | null {
+  const direct = planSchema.safeParse(raw);
+  if (direct.success) return direct.data;
+  if (!raw || typeof raw !== "object") return null;
+  const obj = raw as Record<string, unknown>;
+  if (obj.plan != null) return coercePlan(obj.plan);
+  if (!Array.isArray(obj.steps)) return null;
+
+  const steps = obj.steps.map((step, index) => {
+    if (!step || typeof step !== "object") {
+      return {
+        id: String(index + 1),
+        title: String(step ?? `步骤 ${index + 1}`),
+        detail: String(step ?? ""),
+      };
+    }
+    const item = step as Record<string, unknown>;
+    return {
+      id: String(item.id ?? index + 1),
+      title: String(item.title ?? item.name ?? `步骤 ${index + 1}`),
+      detail: String(item.detail ?? item.description ?? item.title ?? ""),
+      files: Array.isArray(item.files) ? item.files.map(String) : undefined,
+    };
+  });
+
+  const coerced = planSchema.safeParse({
+    summary: String(obj.summary ?? steps[0]?.title ?? "实现用户请求"),
+    steps: steps.length
+      ? steps
+      : [{ id: "1", title: "实现请求", detail: String(obj.summary ?? "") }],
+  });
+  return coerced.success ? coerced.data : null;
+}
 
 export type AgentProgress =
   | { type: "planning" }
@@ -51,12 +94,20 @@ const RUNTIME_RULES = `You are editing a pure-frontend virtual project previewed
 Hard constraints:
 - There is NO Node server and NO local node_modules at runtime.
 - Dependencies must be declared in package.json; Preview resolves them via esm.sh import maps.
-- Prefer TypeScript / TSX. Paths are relative (e.g. src/App.tsx), never absolute.
+- Prefer TypeScript / TSX. Use the @/ alias (maps to src/) or relative paths — never filesystem-absolute paths.
+- UI: reuse src/components/ui/* (shadcn-style). Add new primitives under that folder and declare any new @radix-ui/* deps in package.json.
+- Styling: Tailwind CSS v4 utilities + tokens in src/index.css. Preview injects @tailwindcss/browser — do not add a Node-only CSS build step for Preview.
 - index.html and package.json cannot be deleted.
 - Mutate files ONLY via the provided Sandbox tools.
 - Keep changes minimal and coherent with the existing design.
 - Preview runs at /__preview__/{sessionId}/index.html. If the app needs client-side routing, use HashRouter (or MemoryRouter). NEVER use BrowserRouter / createBrowserRouter — pathname will be the preview URL and routes will not match.
-- After edits, briefly confirm what changed.`;
+- After edits, briefly confirm what changed.
+
+Persistence / Dynamic DB:
+- For schema, seed, or admin CRUD: loadSkill("dynamic-db") then use the dynamicDb tool (projectId is auto-bound).
+- Preferred flow: setupSchema → dynamicDb codegen → readFile src/ddb/generated/index.ts (kindNames) → app code uses getDb() from src/lib/db.ts only.
+- Never curl/fetch Dynamic DB HTTP or hand-write a second DB client.
+${buildSkillsPromptSection()}`;
 
 function projectContext(sandbox: Sandbox): string {
   const files = sandbox.list();
@@ -117,6 +168,11 @@ function toolDetail(input: unknown): string | undefined {
   if (typeof values.path === "string") return values.path;
   if (typeof values.query === "string") return values.query.slice(0, 80);
   if (Array.isArray(values.operations)) return `${values.operations.length} 项操作`;
+  if (typeof values.operation === "string") {
+    const kind = typeof values.kind === "string" ? ` ${values.kind}` : "";
+    return `${values.operation}${kind}`;
+  }
+  if (typeof values.name === "string") return values.name;
   return undefined;
 }
 
@@ -145,8 +201,8 @@ export async function runPlanExecutorAgent(
 
   options.onProgress?.({ type: "planning" });
 
-  // Stream planner; force submitPlan tool for ChatGPT-compatible APIs without json_schema.
-  const planStream = streamText({
+  // Non-streaming planner: MiniMax streaming often truncates nested submitPlan JSON.
+  const planResult = await generateText({
     model,
     abortSignal: options.abortSignal,
     tools: {
@@ -166,32 +222,36 @@ If preview console errors are provided, prioritize fixing them when the user ask
     prompt: `User request:\n${prompt}${historyBlock}${previewErrorBlock}\n\nProject context:\n${projectContext(sandbox)}`,
   });
 
-  const planToolResults = await planStream.toolResults;
-  const planOutput = planToolResults.find(
+  const planFromTool = planResult.toolResults.find(
     (result) => result.toolName === "submitPlan" && result.type === "tool-result",
   )?.output;
+  const planFromCall = planResult.toolCalls.find(
+    (call) => call.toolName === "submitPlan",
+  )?.input;
+  const plan =
+    coercePlan(planFromTool) ?? coercePlan(planFromCall) ?? fallbackPlan(prompt);
 
-  const plan = planSchema.safeParse(planOutput);
-  if (!plan.success) {
-    throw new Error("Planner 未返回有效计划。请确认模型支持 function/tool calling。");
-  }
-
-  options.onProgress?.({ type: "planned", plan: plan.data });
+  options.onProgress?.({ type: "planned", plan });
   options.onProgress?.({ type: "executing" });
 
-  const tools = createSandboxTools(sandbox);
+  const tools = {
+    ...createSandboxTools(sandbox),
+    ...createSkillTools(),
+    ...createDdbTools(sandbox),
+  };
   const executor = new ToolLoopAgent({
     model,
     instructions: `${RUNTIME_RULES}
 
-You are the Executor. Implement the given plan using Sandbox tools.
+You are the Executor. Implement the given plan using Sandbox tools (and dynamicDb / loadSkill when persistence is needed).
 Workflow:
 1. listFiles / readFile / grep to inspect before writing.
    - Prefer grep with fuzzy=true when the exact symbol/string is uncertain.
    - Use glob (e.g. **/*.{ts,tsx}) to narrow search; regex=true for precise patterns.
 2. Prefer replaceInFile for surgical edits; writeFile/addFile for new or full rewrites.
 3. Use applyOperations for multi-file atomic batches.
-4. When done, reply with a short Chinese summary of what you changed.`,
+4. Persistence: loadSkill dynamic-db → dynamicDb setupSchema → dynamicDb codegen → getDb() in app code.
+5. When done, reply with a short Chinese summary of what you changed.`,
     tools,
     stopWhen: isStepCount(40),
     onToolExecutionStart({ toolCall }) {
@@ -231,8 +291,8 @@ Workflow:
   });
 
   const planText = [
-    `Plan summary: ${plan.data.summary}`,
-    ...plan.data.steps.map(
+    `Plan summary: ${plan.summary}`,
+    ...plan.steps.map(
       (step, index) =>
         `${index + 1}. [${step.id}] ${step.title}\n   ${step.detail}${
           step.files?.length ? `\n   files: ${step.files.join(", ")}` : ""
@@ -275,16 +335,16 @@ Workflow:
   options.onProgress?.({ type: "done" });
 
   return {
-    reply: reply.trim() || plan.data.summary,
+    reply: reply.trim() || plan.summary,
     reasoning: reasoning.trim(),
     changed: collectChangedPaths(sandbox, before, snapshot),
-    plan: plan.data,
+    plan,
   };
 }
 
 export const AGENT_SUGGESTIONS = [
   "把主标题改得更有冲击力",
   "增加一个深色模式切换",
-  "把特性区改成三列卡片布局",
+  "加一个学生表并用 Dynamic DB 做列表页",
   "汉化整个落地页",
 ];

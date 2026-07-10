@@ -184,6 +184,9 @@ async function transpileModule(source, path) {
   }
 }
 
+const TAILWIND_BROWSER_SCRIPT =
+  '<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>';
+
 function pinVersion(rawVersion) {
   return String(rawVersion || "latest").replace(/^[~^]/, "") || "latest";
 }
@@ -191,7 +194,8 @@ function pinVersion(rawVersion) {
 function isBrowserRuntimePackage(name) {
   if (name.startsWith("@types/")) return false;
   if (name.startsWith("@vitejs/")) return false;
-  return !["typescript", "vite", "esbuild", "rollup", "tsc"].includes(name);
+  if (name.startsWith("@tailwindcss/")) return false;
+  return !["typescript", "vite", "esbuild", "rollup", "tsc", "tailwindcss"].includes(name);
 }
 
 function dependencyMap(packageSource) {
@@ -232,6 +236,72 @@ function dependencyMap(packageSource) {
   }
 }
 
+/** Map tsconfig paths like "@/*" → ["./src/*"] into import-map prefixes ("@/" → "./src/"). */
+function pathAliasImports(tsconfigSource) {
+  try {
+    const config = JSON.parse(tsconfigSource);
+    const paths = config?.compilerOptions?.paths;
+    if (!paths || typeof paths !== "object") return {};
+
+    const imports = {};
+    for (const [pattern, targets] of Object.entries(paths)) {
+      if (!pattern.endsWith("/*")) continue;
+      const targetList = Array.isArray(targets) ? targets : [targets];
+      const mapped = targetList.find((item) => typeof item === "string" && item.endsWith("/*"));
+      if (!mapped) continue;
+
+      const prefix = pattern.slice(0, -1); // "@/*" → "@/"
+      let dest = mapped.slice(0, -1); // "./src/*" → "./src/"
+      if (!dest.startsWith("./") && !dest.startsWith("../")) dest = `./${dest}`;
+      imports[prefix] = dest;
+    }
+    return imports;
+  } catch {
+    return {};
+  }
+}
+
+function packageUsesTailwind(packageSource) {
+  try {
+    const manifest = JSON.parse(packageSource);
+    const all = { ...(manifest.dependencies || {}), ...(manifest.devDependencies || {}) };
+    return Boolean(
+      all.tailwindcss || all["@tailwindcss/vite"] || all["@tailwindcss/browser"],
+    );
+  } catch {
+    return false;
+  }
+}
+
+function cssLooksLikeTailwind(source) {
+  return /@import\s+["']tailwindcss["']|@theme\b|@tailwind\b|@config\b|@plugin\b|@source\b/.test(
+    source,
+  );
+}
+
+async function projectUsesTailwind(sessionId, packageSource) {
+  if (packageUsesTailwind(packageSource)) return true;
+
+  const cache = await caches.open(CACHE_NAME);
+  const prefix = sourceUrl(sessionId, "");
+  const keys = await cache.keys();
+  for (const request of keys) {
+    if (!request.url.startsWith(prefix) || !request.url.endsWith(".css")) continue;
+    const response = await cache.match(request);
+    if (!response) continue;
+    if (cssLooksLikeTailwind(await response.text())) return true;
+  }
+  return false;
+}
+
+/** Strip Vite-only Tailwind entry imports; the browser runtime supplies the engine. */
+function prepareTailwindCss(source) {
+  return source
+    .replace(/@import\s+["']tailwindcss(?:\/[^"']*)?["']\s*;?/g, "")
+    .replace(/@import\s+["']tailwindcss(?:\/[^"']*)?["']\s+layer\([^)]+\)\s*;?/g, "")
+    .trim();
+}
+
 function bridgeScript() {
   return `<script>
   (() => {
@@ -262,10 +332,17 @@ function rewriteRootAbsoluteUrls(source) {
 
 async function transformHtml(sessionId, source) {
   const packageFile = await readSource(sessionId, "package.json");
-  const imports = dependencyMap(packageFile?.source || "{}");
+  const packageSource = packageFile?.source || "{}";
+  const tsconfigFile = await readSource(sessionId, "tsconfig.json");
+  const imports = {
+    ...dependencyMap(packageSource),
+    ...pathAliasImports(tsconfigFile?.source || "{}"),
+  };
+  const useTailwind = await projectUsesTailwind(sessionId, packageSource);
   const base = `<base href="${PREVIEW_PREFIX}${encodeURIComponent(sessionId)}/">`;
   const importMap = `<script type="importmap">${JSON.stringify({ imports })}</script>`;
-  const injection = `${base}${importMap}${bridgeScript()}`;
+  const tailwindScript = useTailwind ? TAILWIND_BROWSER_SCRIPT : "";
+  const injection = `${base}${importMap}${tailwindScript}${bridgeScript()}`;
   const html = rewriteRootAbsoluteUrls(source);
 
   if (/<head(?:\s[^>]*)?>/i.test(html)) {
@@ -284,12 +361,15 @@ function rewriteCssImports(source) {
 
 function cssModule(source, path) {
   const id = `preview-style-${path.replace(/[^a-z0-9_-]/gi, "-")}`;
-  return `const css = ${JSON.stringify(source)};
+  const isTailwind = cssLooksLikeTailwind(source);
+  const css = isTailwind ? prepareTailwindCss(source) : source;
+  const typeLine = isTailwind ? 'style.type = "text/tailwindcss";\n' : "";
+  return `const css = ${JSON.stringify(css)};
 let style = document.getElementById(${JSON.stringify(id)});
 if (!style) {
   style = document.createElement("style");
   style.id = ${JSON.stringify(id)};
-  document.head.appendChild(style);
+${typeLine}  document.head.appendChild(style);
 }
 style.textContent = css;
 export default css;`;
