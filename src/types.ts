@@ -31,16 +31,20 @@ export type AgentToolActivity = {
   error?: string;
 };
 
+/** Ordered stream of assistant activity (reasoning segments + tools). */
+export type ChatTimelinePart =
+  | { type: "reasoning"; id: string; text: string; streaming?: boolean }
+  | { type: "tool"; tool: AgentToolActivity };
+
 export type ChatMessage = {
   role: "user" | "assistant";
   text: string;
   changed?: string[];
-  reasoning?: string;
-  reasoningStreaming?: boolean;
   plan?: {
     summary: string;
     steps: ChatPlanStep[];
   };
-  tools?: AgentToolActivity[];
+  /** Chronological reasoning / tool activity for this turn. */
+  parts?: ChatTimelinePart[];
   streaming?: boolean;
 };

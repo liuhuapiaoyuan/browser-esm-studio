@@ -134,7 +134,6 @@ export function createNotifyCompleteHook(): AgentHook {
       const notification = new Notification("ESM Studio · 任务完成", {
         body: body.slice(0, 180),
         tag: "esm-studio-agent-complete",
-        renotify: true,
       });
       notification.onclick = () => {
         window.focus();

@@ -3,7 +3,7 @@ import { AgentResponse } from "./components/ai-elements/agent-response";
 import { DEFAULT_FILES } from "./defaultProject";
 import { AGENT_SUGGESTIONS, formatAgentError, runPlanExecutorAgent, type AgentProgress } from "./lib/ai/agent";
 import { requestAgentNotifyPermission, runAgentHooks } from "./lib/ai/hooks";
-import { isAiConfigured, loadAiSettings, saveAiSettings, type AiSettings } from "./lib/ai/settings";
+import { COMPACT_RATIO, compactThreshold, isAiConfigured, loadAiSettings, saveAiSettings, type AiSettings } from "./lib/ai/settings";
 import { buildFileTree, fileLanguage, normalizePath, type TreeNode } from "./lib/path";
 import { previewUrl, syncPreviewProject } from "./lib/preview";
 import { createSandbox, SandboxError, type Sandbox } from "./lib/sandbox";
@@ -16,8 +16,8 @@ import {
 import { formatTypecheckDiagnostics, typecheckProject } from "./lib/typecheck";
 import { downloadProjectZip } from "./lib/zip";
 import type {
-  AgentToolActivity,
   ChatMessage,
+  ChatTimelinePart,
   ConsoleLog,
   FileMap,
   LogLevel,
@@ -177,12 +177,16 @@ function statusLabel(progress: AgentProgress | null, configured: boolean): strin
   if (!configured) return "未配置 API";
   if (!progress) return "Plan → Executor · Stream";
   switch (progress.type) {
+    case "compacting":
+      return "整理对话上下文…";
     case "planning":
       return "Planner 规划中…";
     case "planned":
       return `计划就绪 · ${progress.plan.steps.length} 步`;
     case "executing":
       return "Executor 执行中…";
+    case "usage":
+      return `Context ${formatTokenCount(progress.inputTokens)} tokens`;
     case "reasoning-start":
     case "reasoning-delta":
       return "Agent 思考中…";
@@ -195,6 +199,45 @@ function statusLabel(progress: AgentProgress | null, configured: boolean): strin
     case "done":
       return "完成";
   }
+}
+
+function formatTokenCount(n: number): string {
+  if (n >= 1000) return `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1)}k`;
+  return String(n);
+}
+
+function ContextRing({ used, total }: { used: number; total: number }) {
+  const safeTotal = Math.max(total, 1);
+  const pct = Math.min(1, Math.max(0, used / safeTotal));
+  const compactAt = compactThreshold(safeTotal);
+  const size = 28;
+  const stroke = 2.75;
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const dashOffset = circumference * (1 - pct);
+  const level = used >= safeTotal * 0.9 ? "danger" : used >= compactAt ? "warn" : "ok";
+  const title = `Context ${Math.round(pct * 100)}% · ${formatTokenCount(used)} / ${formatTokenCount(safeTotal)} prompt tokens (provider) · compact @ ${Math.round(COMPACT_RATIO * 100)}%`;
+
+  return (
+    <div className={`context-ring context-ring-${level}`} title={title} aria-label={title} role="meter" aria-valuenow={Math.round(pct * 100)} aria-valuemin={0} aria-valuemax={100}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        <circle className="context-ring-track" cx={size / 2} cy={size / 2} r={radius} fill="none" strokeWidth={stroke} />
+        <circle
+          className="context-ring-value"
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={dashOffset}
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+        />
+      </svg>
+      <span>{Math.round(pct * 100)}</span>
+    </div>
+  );
 }
 
 function formatElementPickPrompt(
@@ -251,6 +294,10 @@ function ChatPanel({
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const workingRef = useRef(false);
+  /** Rolling summary of older chat turns — UI keeps full messages, model gets this. */
+  const [conversationSummary, setConversationSummary] = useState<string | undefined>();
+  /** Latest provider-reported prompt tokens (from AI SDK usage.inputTokens). */
+  const [contextUsed, setContextUsed] = useState(0);
   const configured = isAiConfigured(settings);
 
   useEffect(() => {
@@ -262,6 +309,7 @@ function ChatPanel({
       baseURL: draft.baseURL.trim(),
       apiKey: draft.apiKey.trim(),
       model: draft.model.trim(),
+      contextWindow: draft.contextWindow,
     };
     saveAiSettings(next);
     setSettings(next);
@@ -318,42 +366,65 @@ function ChatPanel({
     ]);
     workingRef.current = true;
     setWorking(true);
-    setProgress({ type: "planning" });
+    setProgress({ type: "compacting" });
 
     const controller = new AbortController();
     abortRef.current = controller;
-    const tools: AgentToolActivity[] = [];
+    const parts: ChatTimelinePart[] = [];
+    let reasoningSeq = 0;
     let completed: Awaited<ReturnType<typeof runPlanExecutorAgent>> | null = null;
+
+    const cloneParts = (): ChatTimelinePart[] =>
+      parts.map((part) =>
+        part.type === "tool"
+          ? { type: "tool" as const, tool: { ...part.tool } }
+          : { type: "reasoning" as const, id: part.id, text: part.text, streaming: part.streaming },
+      );
+
+    const publishParts = () => {
+      updateStreamingMessage({ parts: cloneParts() });
+    };
 
     try {
       completed = await runPlanExecutorAgent(text, sandbox, {
         settings,
         history,
+        conversationSummary,
         previewErrors: getPreviewErrors(),
         abortSignal: controller.signal,
         onProgress: (event) => {
           setProgress(event);
+          if (event.type === "usage") {
+            setContextUsed(event.inputTokens);
+          }
           if (event.type === "planned") {
             updateStreamingMessage({ plan: event.plan });
           }
           if (event.type === "reasoning-start") {
-            updateStreamingMessage({ reasoningStreaming: true });
+            reasoningSeq += 1;
+            parts.push({ type: "reasoning", id: `reasoning-${reasoningSeq}`, text: "", streaming: true });
+            publishParts();
           }
           if (event.type === "reasoning-delta") {
-            updateStreamingMessage((message) => ({
-              ...message,
-              reasoning: `${message.reasoning ?? ""}${event.delta}`,
-              reasoningStreaming: true,
-            }));
+            const last = parts[parts.length - 1];
+            if (last?.type === "reasoning" && last.streaming) {
+              last.text += event.delta;
+            } else {
+              reasoningSeq += 1;
+              parts.push({ type: "reasoning", id: `reasoning-${reasoningSeq}`, text: event.delta, streaming: true });
+            }
+            publishParts();
           }
           if (event.type === "reasoning-end") {
-            updateStreamingMessage({ reasoningStreaming: false });
+            const last = parts[parts.length - 1];
+            if (last?.type === "reasoning") last.streaming = false;
+            publishParts();
           }
           if (event.type === "tool") {
-            const index = tools.findIndex((tool) => tool.id === event.tool.id);
-            if (index >= 0) tools[index] = event.tool;
-            else tools.push(event.tool);
-            updateStreamingMessage({ tools: [...tools] });
+            const index = parts.findIndex((part) => part.type === "tool" && part.tool.id === event.tool.id);
+            if (index >= 0) parts[index] = { type: "tool", tool: event.tool };
+            else parts.push({ type: "tool", tool: event.tool });
+            publishParts();
           }
           if (event.type === "text-delta") {
             updateStreamingMessage((message) => ({
@@ -363,30 +434,39 @@ function ChatPanel({
           }
         },
       });
+      if (completed.conversationSummary !== undefined) {
+        setConversationSummary(completed.conversationSummary);
+      }
+      if (completed.usage?.inputTokens) {
+        setContextUsed(completed.usage.inputTokens);
+      }
+      for (const part of parts) {
+        if (part.type === "reasoning") part.streaming = false;
+      }
       updateStreamingMessage({
         text: completed.reply,
-        reasoning: completed.reasoning,
-        reasoningStreaming: false,
         changed: completed.changed,
         plan: completed.plan,
-        tools: tools.length > 0 ? tools : undefined,
+        parts: parts.length > 0 ? cloneParts() : undefined,
         streaming: false,
       });
     } catch (error) {
+      for (const part of parts) {
+        if (part.type === "reasoning") part.streaming = false;
+      }
+      const snapshot = parts.length > 0 ? cloneParts() : undefined;
       if (controller.signal.aborted) {
         updateStreamingMessage((message) => ({
           ...message,
           text: message.text.trim() || "已停止生成。",
-          tools: tools.length > 0 ? tools : undefined,
-          reasoningStreaming: false,
+          parts: snapshot,
           streaming: false,
         }));
       } else {
         updateStreamingMessage((message) => ({
           ...message,
           text: `Agent 失败：${formatAgentError(error)}`,
-          tools: tools.length > 0 ? tools : undefined,
-          reasoningStreaming: false,
+          parts: snapshot,
           streaming: false,
         }));
       }
@@ -479,8 +559,25 @@ function ChatPanel({
               spellCheck={false}
             />
           </label>
+          <label>
+            Context Window (tokens)
+            <input
+              type="number"
+              min={8000}
+              step={1000}
+              value={draft.contextWindow}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  contextWindow: Number(event.target.value) || current.contextWindow,
+                }))
+              }
+              placeholder="256000"
+              spellCheck={false}
+            />
+          </label>
           <div className="ai-settings-actions">
-            <span>默认走 Vite 代理 /openai-proxy，避免 CORS</span>
+            <span>Compact 阈值 = 上下文 × 60%（默认 256K → 153.6K）</span>
             <button type="button" onClick={persistSettings}>保存</button>
           </div>
         </div>
@@ -535,15 +632,18 @@ function ChatPanel({
           />
           <div className="composer-actions">
             <span>{statusLabel(progress, configured)}</span>
-            {working ? (
-              <button type="button" onClick={stop} aria-label="停止" className="stop-button">
-                停止
-              </button>
-            ) : (
-              <button type="submit" disabled={!prompt.trim()} aria-label="发送">
-                <Icon name="send" size={16} />
-              </button>
-            )}
+            <div className="composer-actions-right">
+              <ContextRing used={contextUsed} total={settings.contextWindow} />
+              {working ? (
+                <button type="button" onClick={stop} aria-label="停止" className="stop-button">
+                  停止
+                </button>
+              ) : (
+                <button type="submit" disabled={!prompt.trim()} aria-label="发送">
+                  <Icon name="send" size={16} />
+                </button>
+              )}
+            </div>
           </div>
         </form>
         <p className="composer-note">流式 Plan → Executor：边改文件边输出回复</p>
@@ -552,13 +652,38 @@ function ChatPanel({
   );
 }
 
-function RuntimeConsole({ logs, onClear, onClose }: { logs: ConsoleLog[]; onClear: () => void; onClose: () => void }) {
+function RuntimeConsole({
+  logs,
+  onClear,
+  onClose,
+  onFixError,
+}: {
+  logs: ConsoleLog[];
+  onClear: () => void;
+  onClose: () => void;
+  onFixError: (message: string) => void;
+}) {
   return (
     <section className="runtime-console">
       <header><span><Icon name="terminal" size={14} />控制台 <i>{logs.length}</i></span><div><button onClick={onClear}>清空</button><button className="icon-button subtle" onClick={onClose}><Icon name="close" size={14} /></button></div></header>
       <div className="console-lines">
         {logs.length === 0 ? <p className="console-empty">运行时日志会显示在这里。</p> : logs.map((log, index) => (
-          <p className={`console-${log.level}`} key={index}><time>{log.time}</time><span>{log.level}</span>{log.message}</p>
+          <p className={`console-${log.level}`} key={index}>
+            <time>{log.time}</time>
+            {log.level === "error" ? (
+              <button
+                type="button"
+                className="console-level-fix"
+                title="点击让 Agent 智能修复"
+                onClick={() => onFixError(log.message)}
+              >
+                {log.level}
+              </button>
+            ) : (
+              <span>{log.level}</span>
+            )}
+            {log.message}
+          </p>
         ))}
       </div>
     </section>
@@ -577,6 +702,7 @@ function PreviewPane({
   showConsole,
   onToggleConsole,
   onClearLogs,
+  onFixError,
   pickMode,
   onPickMode,
   onElementPicked,
@@ -592,6 +718,7 @@ function PreviewPane({
   showConsole: boolean;
   onToggleConsole: () => void;
   onClearLogs: () => void;
+  onFixError: (message: string) => void;
   pickMode: boolean;
   onPickMode: (enabled: boolean) => void;
   onElementPicked: (pick: {
@@ -677,7 +804,7 @@ function PreviewPane({
           </div>
         )}
       </div>
-      {showConsole && <RuntimeConsole logs={logs} onClear={onClearLogs} onClose={onToggleConsole} />}
+      {showConsole && <RuntimeConsole logs={logs} onClear={onClearLogs} onClose={onToggleConsole} onFixError={onFixError} />}
       <div className="preview-footer">
         <button className={`console-toggle ${logs.some((item) => item.level === "error") ? "has-error" : ""}`} onClick={onToggleConsole}><Icon name="terminal" size={14} />控制台 {logs.length > 0 && <i>{logs.length}</i>}</button>
         <span className="preview-engine">Service Worker · TypeScript · 原生 ESM · esm.sh</span>
@@ -932,6 +1059,11 @@ export function App() {
               showConsole={showConsole}
               onToggleConsole={() => setShowConsole((value) => !value)}
               onClearLogs={() => setLogs([])}
+              onFixError={(message) => {
+                agentSubmitRef.current?.(
+                  `请修复 Preview 控制台报错，不要改无关文件：\n- ${message}`,
+                );
+              }}
               pickMode={pickMode}
               onPickMode={setPickMode}
               onElementPicked={(pick) => {

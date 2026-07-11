@@ -67,16 +67,48 @@ const htmlSource = await html.text();
 assert.equal(html.status, 200);
 assert.match(htmlSource, /type="importmap"/);
 assert.match(htmlSource, /https:\/\/esm\.sh\/react@19\.1\.0\?dev&target=es2022/);
+assert.match(htmlSource, /"react\/jsx-dev-runtime":"https:\/\/esm\.sh\/react@19\.1\.0\/jsx-dev-runtime\?dev&target=es2022"/);
 assert.match(htmlSource, /https:\/\/esm\.sh\/react-dom@19\.1\.0\?dev&target=es2022/);
 assert.match(htmlSource, /lucide-react@0\.468\.0\?dev&target=es2022&deps=react@19\.1\.0,react-dom@19\.1\.0/);
 assert.doesNotMatch(htmlSource, /typescript@/);
 assert.match(htmlSource, /browser-esm-preview/);
 
+// Custom React renderers: skip esm.sh ?dev (broken named exports on react-reconciler/constants).
+const fiberFiles = {
+  ...files,
+  "package.json": JSON.stringify({
+    dependencies: {
+      react: "^19.1.0",
+      "react-dom": "^19.1.0",
+      "@react-three/fiber": "^9.4.0",
+      three: "^0.172.0",
+    },
+  }),
+};
+await new Promise((resolve, reject) => {
+  messageHandler({
+    data: { type: "SYNC_PREVIEW_PROJECT", sessionId: "fiber", files: fiberFiles },
+    ports: [{ postMessage: (message) => (message.ok ? resolve() : reject(new Error(message.error))) }],
+    waitUntil: (promise) => promise.catch(reject),
+  });
+});
+const fiberHtml = await request("/__preview__/fiber/index.html");
+const fiberHtmlSource = await fiberHtml.text();
+assert.equal(fiberHtml.status, 200);
+assert.match(fiberHtmlSource, /https:\/\/esm\.sh\/react@19\.1\.0\?dev&target=es2022/);
+assert.match(
+  fiberHtmlSource,
+  /@react-three\/fiber@9\.4\.0\?target=es2022&deps=react@19\.1\.0,react-dom@19\.1\.0,three@0\.172\.0/,
+);
+assert.doesNotMatch(fiberHtmlSource, /@react-three\/fiber@[^"]*\?dev/);
+assert.match(fiberHtmlSource, /three@0\.172\.0\?dev&target=es2022/);
+
 const typescript = await request("/__preview__/test/src/App.tsx");
 assert.equal(typescript.status, 200);
 assert.equal(typescript.headers.get("content-type"), "text/javascript; charset=utf-8");
 const tsSource = await typescript.text();
-assert.match(tsSource, /jsx-runtime|createElement|react/);
+assert.match(tsSource, /https:\/\/esm\.sh\/react@19\.1\.0\/jsx-dev-runtime\?dev&target=es2022/);
+assert.doesNotMatch(tsSource, /from ["']react\/jsx-dev-runtime["']/);
 assert.doesNotMatch(tsSource, /:\s*string/);
 
 const entry = await request("/__preview__/test/src/main.tsx");
@@ -96,7 +128,33 @@ assert.equal(missing.status, 404);
 // NodeNext: import './App.js' must resolve to App.tsx (ddb codegen style).
 const nodeNextJs = await request("/__preview__/test/src/App.js");
 assert.equal(nodeNextJs.status, 200);
-assert.match(await nodeNextJs.text(), /jsx-runtime|createElement|react/);
+assert.match(await nodeNextJs.text(), /https:\/\/esm\.sh\/react@19\.1\.0\/jsx-dev-runtime/);
+
+// tsconfig "react/*" alias must not clobber npm react/jsx-dev-runtime in the import map.
+const aliasClashFiles = {
+  ...files,
+  "tsconfig.json": JSON.stringify({
+    compilerOptions: {
+      paths: {
+        "@/*": ["./src/*"],
+        "react/*": ["./types/react/*"],
+      },
+    },
+  }),
+};
+await new Promise((resolve, reject) => {
+  messageHandler({
+    data: { type: "SYNC_PREVIEW_PROJECT", sessionId: "alias-clash", files: aliasClashFiles },
+    ports: [{ postMessage: (message) => (message.ok ? resolve() : reject(new Error(message.error))) }],
+    waitUntil: (promise) => promise.catch(reject),
+  });
+});
+const aliasHtml = await request("/__preview__/alias-clash/index.html");
+const aliasHtmlSource = await aliasHtml.text();
+assert.match(aliasHtmlSource, /"react\/jsx-dev-runtime":"https:\/\/esm\.sh\/react@19\.1\.0\/jsx-dev-runtime/);
+assert.doesNotMatch(aliasHtmlSource, /"react\/":"\.\/types\/react\//);
+const aliasTsx = await request("/__preview__/alias-clash/src/App.tsx");
+assert.match(await aliasTsx.text(), /https:\/\/esm\.sh\/react@19\.1\.0\/jsx-dev-runtime\?dev&target=es2022/);
 
 // --- Path aliases + Tailwind browser runtime ---
 const shadcnFiles = {

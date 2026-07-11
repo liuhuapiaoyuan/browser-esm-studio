@@ -1,14 +1,15 @@
-import { APICallError, generateText, isStepCount, tool, ToolLoopAgent } from "ai";
+import { APICallError, generateText, isStepCount, tool, ToolLoopAgent, type LanguageModelUsage } from "ai";
 import { z } from "zod";
 import type { Sandbox } from "../sandbox";
 import type { AgentToolActivity } from "../../types";
+import { compactLoopMessages, estimateTextTokens, prepareHistoryContext } from "./context";
 import { createLanguageModel } from "./provider";
 import { createSandboxTools } from "./sandboxTools";
 import { createDdbTools } from "./ddbTools";
 import { createSkillTools } from "./skillTools";
 import { createTypecheckTools } from "./typecheckTools";
 import { buildSkillsPromptSection } from "./skills/registry";
-import { isAiConfigured, loadAiSettings, type AiSettings } from "./settings";
+import { compactThreshold, isAiConfigured, loadAiSettings, type AiSettings } from "./settings";
 
 const planStepSchema = z.object({
   id: z.string(),
@@ -68,9 +69,11 @@ function coercePlan(raw: unknown): AgentPlan | null {
 }
 
 export type AgentProgress =
+  | { type: "compacting" }
   | { type: "planning" }
   | { type: "planned"; plan: AgentPlan }
   | { type: "executing" }
+  | { type: "usage"; inputTokens: number; totalTokens?: number }
   | { type: "reasoning-start" }
   | { type: "reasoning-delta"; delta: string }
   | { type: "reasoning-end" }
@@ -83,12 +86,34 @@ export type AgentChatTurn = {
   text: string;
 };
 
+export type AgentUsage = {
+  /** Latest provider-reported prompt tokens (context window pressure). */
+  inputTokens: number;
+  totalTokens?: number;
+};
+
 export type AgentResult = {
   reply: string;
   reasoning: string;
   changed: string[];
   plan: AgentPlan;
+  /** Rolling summary of older chat turns for the next request. */
+  conversationSummary?: string;
+  /** Peak prompt tokens observed from the provider this turn. */
+  usage?: AgentUsage;
 };
+
+function readInputTokens(usage: LanguageModelUsage | undefined): number | undefined {
+  if (!usage) return undefined;
+  if (typeof usage.inputTokens === "number" && Number.isFinite(usage.inputTokens)) {
+    return usage.inputTokens;
+  }
+  // Some OpenAI-compatible proxies only return total_tokens.
+  if (typeof usage.totalTokens === "number" && Number.isFinite(usage.totalTokens)) {
+    return usage.totalTokens;
+  }
+  return undefined;
+}
 
 const RUNTIME_RULES = `You are editing a pure-frontend virtual project previewed in the browser.
 
@@ -100,6 +125,7 @@ const RUNTIME_RULES = `You are editing a pure-frontend virtual project previewed
 - Import extensions: match existing style — local/alias imports usually include \`.ts\` / \`.tsx\` (see tsconfig allowImportingTsExtensions). Mirror neighbors; do not drop extensions inconsistently.
 - NOT Next.js / Remix / Expo: no \`next/*\`, no App Router, no RSC (\`"use client"\` unnecessary), no server actions, no \`process.env\` for secrets.
 - Routing: entry already wraps with HashRouter. Use \`react-router-dom\` routes under hash. NEVER BrowserRouter / createBrowserRouter (Preview path is \`/__preview__/...\`).
+- Three.js / R3F (React 19): use \`@react-three/fiber@^9\` + \`@react-three/drei@^10\` (+ \`three\`). NEVER fiber@8 / drei@9 — they target React 18 and crash with \`ReactCurrentBatchConfig\` via esm.sh.
 
 ## UI (shadcn new-york)
 - Reuse ONLY components that already exist under \`src/components/ui/*\` (listed in project context). Import like \`@/components/ui/button.tsx\`.
@@ -152,6 +178,11 @@ function projectContext(sandbox: Sandbox): string {
   return `Current files (${files.length}):\n${files.map((f) => `- ${f}`).join("\n")}\n\n${uiBlock}\n\npackage.json:\n${packageJson}`;
 }
 
+/** Fixed prompt overhead (instructions + project snapshot) — kept for diagnostics. */
+export function estimateAgentFixedTokens(sandbox: Sandbox): number {
+  return estimateTextTokens(RUNTIME_RULES) + estimateTextTokens(projectContext(sandbox));
+}
+
 function collectChangedPaths(
   sandbox: Sandbox,
   before: Set<string>,
@@ -168,14 +199,6 @@ function collectChangedPaths(
     if (!sandbox.exists(path)) changed.add(path);
   }
   return [...changed].sort();
-}
-
-function formatHistory(history: AgentChatTurn[] | undefined): string {
-  if (!history?.length) return "";
-  const recent = history.slice(-8);
-  return `\n\nRecent conversation:\n${recent
-    .map((turn) => `${turn.role === "user" ? "User" : "Assistant"}: ${turn.text}`)
-    .join("\n")}`;
 }
 
 function formatPreviewErrors(errors: string[] | undefined): string {
@@ -219,6 +242,8 @@ export async function runPlanExecutorAgent(
   options: {
     settings?: AiSettings;
     history?: AgentChatTurn[];
+    /** Prior rolling summary from a previous agent turn. */
+    conversationSummary?: string;
     previewErrors?: string[];
     onProgress?: (event: AgentProgress) => void;
     abortSignal?: AbortSignal;
@@ -230,13 +255,34 @@ export async function runPlanExecutorAgent(
   }
 
   const model = createLanguageModel(settings);
-  const historyBlock = formatHistory(options.history);
+  options.onProgress?.({ type: "compacting" });
+  const preparedHistory = await prepareHistoryContext({
+    history: options.history,
+    previousSummary: options.conversationSummary,
+    model,
+    contextWindow: settings.contextWindow,
+    abortSignal: options.abortSignal,
+  });
+  const historyBlock = preparedHistory.block;
   const previewErrorBlock = formatPreviewErrors(options.previewErrors);
   const before = new Set(sandbox.list());
   const snapshot = new Map<string, string>();
   for (const path of before) snapshot.set(path, sandbox.read(path));
 
   options.onProgress?.({ type: "planning" });
+
+  // Track peak provider-reported prompt size for the context meter + compact trigger.
+  let peakInputTokens = 0;
+  const reportUsage = (usage: LanguageModelUsage | undefined) => {
+    const inputTokens = readInputTokens(usage);
+    if (inputTokens == null) return;
+    peakInputTokens = Math.max(peakInputTokens, inputTokens);
+    options.onProgress?.({
+      type: "usage",
+      inputTokens,
+      totalTokens: typeof usage?.totalTokens === "number" ? usage.totalTokens : undefined,
+    });
+  };
 
   // Non-streaming planner: MiniMax streaming often truncates nested submitPlan JSON.
   const planResult = await generateText({
@@ -259,6 +305,7 @@ Plan only against the Stack above (React 19 + TS + shadcn ui + Tailwind v4 + Has
 If preview console errors are provided, prioritize fixing them when the user asks to fix bugs or the errors block the request.`,
     prompt: `User request:\n${prompt}${historyBlock}${previewErrorBlock}\n\nProject context:\n${projectContext(sandbox)}`,
   });
+  reportUsage(planResult.usage);
 
   const planFromTool = planResult.toolResults.find(
     (result) => result.toolName === "submitPlan" && result.type === "tool-result",
@@ -278,6 +325,7 @@ If preview console errors are provided, prioritize fixing them when the user ask
     ...createDdbTools(sandbox),
     ...createTypecheckTools(sandbox),
   };
+  const threshold = compactThreshold(settings.contextWindow);
   const executor = new ToolLoopAgent({
     model,
     instructions: `${RUNTIME_RULES}
@@ -285,8 +333,9 @@ If preview console errors are provided, prioritize fixing them when the user ask
 You are the Executor. Implement the given plan using Sandbox tools (and dynamicDb / loadSkill / typecheck when needed).
 Workflow:
 1. listFiles / readFile / grep to inspect before writing.
-   - Prefer grep with fuzzy=true when the exact symbol/string is uncertain.
-   - Use glob (e.g. **/*.{ts,tsx}) to narrow search; regex=true for precise patterns.
+   - grep: start with outputMode=files when locating symbols; then content (default context=2) on a few paths.
+   - Prefer word=true for identifier/symbol names; fuzzy=true when spelling is uncertain; regex=true for precise patterns.
+   - Use glob (e.g. **/*.{ts,tsx}) or paths to narrow. Use before/after context from hits for replaceInFile when possible.
    - Before importing a UI primitive, confirm it is in the available components list (or add it under src/components/ui/).
 2. Prefer replaceInFile for surgical edits; writeFile/addFile for new or full rewrites.
 3. Use applyOperations for multi-file atomic batches.
@@ -296,6 +345,16 @@ Workflow:
 7. When done, reply with a short Chinese summary of what you changed.`,
     tools,
     stopWhen: isStepCount(40),
+    // Prefer provider inputTokens when available; fall back to message-size estimate.
+    // https://ai-sdk.dev/cookbook/guides/agent-context-compaction
+    prepareStep: ({ messages }) => {
+      const force = peakInputTokens >= threshold;
+      const compacted = compactLoopMessages(messages, settings.contextWindow, { force });
+      return compacted ? { messages: compacted } : undefined;
+    },
+    onStepEnd(step) {
+      reportUsage(step.usage);
+    },
     onToolExecutionStart({ toolCall }) {
       options.onProgress?.({
         type: "tool",
@@ -352,6 +411,10 @@ Workflow:
   let reasoning = "";
   for await (const part of result.stream) {
     switch (part.type) {
+      case "finish-step":
+        // Per-step usage.inputTokens = real prompt size for that model call.
+        reportUsage(part.usage);
+        break;
       case "reasoning-start":
         options.onProgress?.({ type: "reasoning-start" });
         break;
@@ -381,6 +444,8 @@ Workflow:
     reasoning: reasoning.trim(),
     changed: collectChangedPaths(sandbox, before, snapshot),
     plan,
+    conversationSummary: preparedHistory.summary,
+    usage: peakInputTokens > 0 ? { inputTokens: peakInputTokens } : undefined,
   };
 }
 

@@ -29,18 +29,26 @@ export type GrepMatch = {
   column: number;
   text: string;
   match: string;
+  /** Lines immediately before the hit (when context > 0). */
+  before?: string[];
+  /** Lines immediately after the hit (when context > 0). */
+  after?: string[];
   /** Present when fuzzy=true; lower is tighter / better. */
   score?: number;
 };
 
 export type GrepOptions = {
   regex?: boolean;
-  /** Subsequence fuzzy match (e.g. "usSt" → "useState"). Incompatible with regex. */
+  /** Subsequence fuzzy match (e.g. "usSt" → "useState"). Incompatible with regex / word. */
   fuzzy?: boolean;
+  /** Wrap literal/regex query with word boundaries (\b). Incompatible with fuzzy. */
+  word?: boolean;
   caseSensitive?: boolean;
   paths?: string[];
   /** Glob filter on paths (supports *, ?, and **). */
   glob?: string;
+  /** Include this many lines before/after each hit. */
+  context?: number;
   maxResults?: number;
 };
 
@@ -182,7 +190,13 @@ function buildFuzzyPattern(query: string, caseSensitive: boolean, global: boolea
 
 function buildSearchPattern(
   query: string,
-  options: { regex?: boolean; fuzzy?: boolean; caseSensitive?: boolean; global?: boolean },
+  options: {
+    regex?: boolean;
+    fuzzy?: boolean;
+    word?: boolean;
+    caseSensitive?: boolean;
+    global?: boolean;
+  },
 ): RegExp {
   if (!query) {
     throw new SandboxError("INVALID_OPERATION", "Search query is required.");
@@ -190,18 +204,28 @@ function buildSearchPattern(
   if (options.regex && options.fuzzy) {
     throw new SandboxError("INVALID_OPERATION", "Cannot combine regex and fuzzy search.");
   }
+  if (options.word && options.fuzzy) {
+    throw new SandboxError("INVALID_OPERATION", "Cannot combine word and fuzzy search.");
+  }
 
   if (options.fuzzy) {
     return buildFuzzyPattern(query, options.caseSensitive === true, options.global === true);
   }
 
   const flags = `${options.global ? "g" : ""}${options.caseSensitive === false ? "i" : ""}`;
+  const source = options.regex ? query : escapeRegExp(query);
+  const wrapped = options.word ? `\\b(?:${source})\\b` : source;
   try {
-    return new RegExp(options.regex ? query : escapeRegExp(query), flags);
+    return new RegExp(wrapped, flags);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new SandboxError("INVALID_OPERATION", `Invalid regular expression: ${message}`);
   }
+}
+
+function clipLine(text: string, max = 240): string {
+  if (text.length <= max) return text;
+  return `${text.slice(0, max)}…`;
 }
 
 function replaceInContent(
@@ -271,9 +295,11 @@ export class Sandbox {
 
   grep(query: string, options: GrepOptions = {}): GrepMatch[] {
     const fuzzy = options.fuzzy === true;
+    const context = Math.max(0, Math.min(10, Math.floor(options.context ?? 0)));
     const pattern = buildSearchPattern(query, {
       regex: options.regex,
       fuzzy,
+      word: options.word,
       // Fuzzy defaults to case-insensitive unless explicitly caseSensitive.
       caseSensitive: fuzzy ? options.caseSensitive === true : options.caseSensitive,
       global: true,
@@ -301,9 +327,17 @@ export class Sandbox {
             path,
             line: lineIndex + 1,
             column: match.index + 1,
-            text: line,
+            text: clipLine(line),
             match: match[0],
           };
+          if (context > 0) {
+            entry.before = lines
+              .slice(Math.max(0, lineIndex - context), lineIndex)
+              .map((l) => clipLine(l));
+            entry.after = lines
+              .slice(lineIndex + 1, lineIndex + 1 + context)
+              .map((l) => clipLine(l));
+          }
           if (fuzzy) {
             // Tighter span + earlier column ranks higher.
             entry.score = match[0].length * 1000 + match.index;

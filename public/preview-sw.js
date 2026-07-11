@@ -174,20 +174,52 @@ async function loadSucrase() {
   return sucrasePromise;
 }
 
-async function transpileModule(source, path) {
+const DEFAULT_REACT_VERSION = "19.2.7";
+
+function packageReactVersion(packageSource) {
+  try {
+    const react = JSON.parse(packageSource)?.dependencies?.react;
+    if (react) return pinVersion(react);
+  } catch {
+    /* ignore */
+  }
+  return DEFAULT_REACT_VERSION;
+}
+
+/** Sucrase automatic JSX emits bare "react/jsx-dev-runtime"; pin to esm.sh so Preview
+ *  does not depend on import-map prefix matching (aliases / missing react / stale SW). */
+function rewriteAutomaticJsxImports(code, reactVersion) {
+  const version = reactVersion || DEFAULT_REACT_VERSION;
+  const query = "dev&target=es2022";
+  const pairs = [
+    ["react/jsx-dev-runtime", `https://esm.sh/react@${version}/jsx-dev-runtime?${query}`],
+    ["react/jsx-runtime", `https://esm.sh/react@${version}/jsx-runtime?${query}`],
+  ];
+  let out = code;
+  for (const [bare, url] of pairs) {
+    out = out.replaceAll(JSON.stringify(bare), JSON.stringify(url));
+    out = out.replaceAll(`'${bare}'`, `'${url}'`);
+  }
+  return out;
+}
+
+async function transpileModule(source, path, reactVersion) {
   if (!needsTranspile(path)) return source;
 
   const runtime = await loadSucrase();
   const transforms = ["typescript"];
-  if (/\.(?:tsx|jsx)$/i.test(path)) transforms.push("jsx");
+  const isJsx = /\.(?:tsx|jsx)$/i.test(path);
+  if (isJsx) transforms.push("jsx");
 
   try {
-    return runtime.transform(source, {
+    let code = runtime.transform(source, {
       transforms,
       jsxRuntime: "automatic",
       production: false,
       filePath: path,
     }).code;
+    if (isJsx) code = rewriteAutomaticJsxImports(code, reactVersion);
+    return code;
   } catch (error) {
     throw new Error(`转译失败 ${path}: ${error.message}`);
   }
@@ -207,6 +239,18 @@ function isBrowserRuntimePackage(name) {
   return !["typescript", "vite", "esbuild", "rollup", "tsc", "tailwindcss"].includes(name);
 }
 
+/**
+ * esm.sh `?dev` CJS→ESM interop drops named exports on react-reconciler/constants
+ * (e.g. ConcurrentRoot). Skip `dev` for the reconciler and packages that pull it in,
+ * so transitive rewrites stay on the production build.
+ */
+function esmShUseDev(name) {
+  if (name === "react-reconciler" || name === "its-fine") return false;
+  if (name.startsWith("@react-three/")) return false;
+  if (name === "@pixi/react" || name === "@react-pdf/renderer") return false;
+  return true;
+}
+
 function dependencyMap(packageSource) {
   try {
     const manifest = JSON.parse(packageSource);
@@ -221,8 +265,10 @@ function dependencyMap(packageSource) {
       pins[name] = pinVersion(rawVersion);
     }
 
-    // Always expose React / ReactDOM when present so TSX automatic runtime can resolve.
-    const sharedDependencies = ["react", "react-dom", "preact", "vue", "svelte"]
+    // Singleton runtimes must be pinned via ?deps so esm.sh does not pull a second copy
+    // (ReactCurrentBatchConfig / "Multiple instances of Three.js").
+    const sharedRuntimeNames = ["react", "react-dom", "preact", "vue", "svelte", "three"];
+    const sharedDependencies = sharedRuntimeNames
       .filter((name) => pins[name])
       .map((name) => `${name}@${pins[name]}`)
       .join(",");
@@ -230,13 +276,29 @@ function dependencyMap(packageSource) {
     for (const [name, rawVersion] of Object.entries(dependencies)) {
       const version = pinVersion(rawVersion);
       const target = `https://esm.sh/${name}@${version}`;
-      const isSharedRuntime = ["react", "react-dom", "preact", "vue", "svelte"].includes(name);
-      const params = ["dev", "target=es2022"];
+      const isSharedRuntime = sharedRuntimeNames.includes(name);
+      const useDev = esmShUseDev(name);
+      const params = ["target=es2022"];
+      if (useDev) params.unshift("dev");
       if (sharedDependencies && !isSharedRuntime) params.push(`deps=${sharedDependencies}`);
 
       imports[name] = `${target}?${params.join("&")}`;
       // esm.sh documents the `&dev/` form specifically for import-map prefix entries.
-      imports[`${name}/`] = `${target}&dev&target=es2022/`;
+      const prefixParams = useDev ? "&dev&target=es2022" : "&target=es2022";
+      const prefixDeps =
+        sharedDependencies && !isSharedRuntime ? `&deps=${sharedDependencies}` : "";
+      imports[`${name}/`] = `${target}${prefixParams}${prefixDeps}/`;
+    }
+
+    // Exact subpaths — do not rely only on "react/" prefix (tsconfig "react/*" aliases can clobber it).
+    if (pins.react) {
+      const q = esmShUseDev("react") ? "dev&target=es2022" : "target=es2022";
+      imports["react/jsx-runtime"] = `https://esm.sh/react@${pins.react}/jsx-runtime?${q}`;
+      imports["react/jsx-dev-runtime"] = `https://esm.sh/react@${pins.react}/jsx-dev-runtime?${q}`;
+    }
+    if (pins["react-dom"]) {
+      const q = esmShUseDev("react-dom") ? "dev&target=es2022" : "target=es2022";
+      imports["react-dom/client"] = `https://esm.sh/react-dom@${pins["react-dom"]}/client?${q}`;
     }
 
     return imports;
@@ -439,9 +501,10 @@ async function transformHtml(sessionId, source) {
   const packageFile = await readSource(sessionId, "package.json");
   const packageSource = packageFile?.source || "{}";
   const tsconfigFile = await readSource(sessionId, "tsconfig.json");
+  // npm deps must win over tsconfig path aliases (e.g. "react/*" → types) so JSX runtime resolves.
   const imports = {
-    ...dependencyMap(packageSource),
     ...pathAliasImports(tsconfigFile?.source || "{}"),
+    ...dependencyMap(packageSource),
   };
   const useTailwind = await projectUsesTailwind(sessionId, packageSource);
   const base = `<base href="${PREVIEW_PREFIX}${encodeURIComponent(sessionId)}/">`;
@@ -501,7 +564,9 @@ async function handlePreviewRequest(url) {
 
     if (file.path.endsWith(".html")) source = await transformHtml(sessionId, source);
     if (isScriptModule(file.path)) {
-      source = await transpileModule(source, file.path);
+      const packageFile = await readSource(sessionId, "package.json");
+      const reactVersion = packageReactVersion(packageFile?.source || "{}");
+      source = await transpileModule(source, file.path, reactVersion);
       source = rewriteCssImports(source);
       type = "text/javascript; charset=utf-8";
     }

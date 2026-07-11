@@ -1,39 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AgentToolActivity, ChatMessage } from "../../types";
 
-const GLYPHS = {
-  alert: ["M12 3 2.8 20h18.4L12 3Z", "M12 9v4", "M12 17h.01"],
-  brain: [
-    "M9.5 4A2.5 2.5 0 0 0 7 6.5v.2A3 3 0 0 0 5 12a3 3 0 0 0 2 5.3v.2A2.5 2.5 0 0 0 11.5 20V4.5A2.5 2.5 0 0 0 9.5 4Z",
-    "M14.5 4A2.5 2.5 0 0 1 17 6.5v.2a3 3 0 0 1 2 5.3 3 3 0 0 1-2 5.3v.2a2.5 2.5 0 0 1-4.5 2.5V4.5A2.5 2.5 0 0 1 14.5 4Z",
-    "M8 9.5h3.5",
-    "M12.5 14H16",
-  ],
-  check: ["m5 12 4 4L19 6"],
-  chevron: ["m8 10 4 4 4-4"],
-  file: ["M6 3h8l4 4v14H6V3Z", "M14 3v5h4"],
+const PLAN_GLYPHS = {
   plan: ["M9 6h11", "M9 12h11", "M9 18h11", "M4 6h.01", "M4 12h.01", "M4 18h.01"],
-  tool: [
-    "M14.7 6.3a4 4 0 0 0-5-5L12 4 9 7 6.3 4.3a4 4 0 0 0 5 5L4 16.6a2 2 0 0 0 2.8 2.8l7.4-7.4a4 4 0 0 0 5-5L16.5 9.7l-3-3 1.2-.4Z",
-  ],
+  chevron: ["m8 10 4 4 4-4"],
 } as const;
 
-type GlyphName = keyof typeof GLYPHS;
-
-function Glyph({ name, size = 15 }: { name: GlyphName; size?: number }) {
+function PlanGlyph({ name, size = 15 }: { name: keyof typeof PLAN_GLYPHS; size?: number }) {
   return (
-    <svg
-      aria-hidden="true"
-      fill="none"
-      height={size}
-      stroke="currentColor"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth="1.8"
-      viewBox="0 0 24 24"
-      width={size}
-    >
-      {GLYPHS[name].map((path) => <path d={path} key={path} />)}
+    <svg aria-hidden="true" fill="none" height={size} stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" viewBox="0 0 24 24" width={size}>
+      {PLAN_GLYPHS[name].map((path) => <path d={path} key={path} />)}
     </svg>
   );
 }
@@ -194,22 +170,24 @@ function ReasoningPanel({ text, streaming }: { text: string; streaming: boolean 
 
   if (!text && !streaming) return null;
 
+  const label = streaming
+    ? "正在思考…"
+    : duration
+      ? `思考过程 · ${duration}s`
+      : "思考过程";
+
   return (
-    <section className={`ai-reasoning ${streaming ? "is-streaming" : ""}`}>
-      <button aria-expanded={open} className="ai-disclosure-trigger" onClick={() => setOpen((value) => !value)} type="button">
-        <span className="ai-activity-icon"><Glyph name="brain" /></span>
-        <span className="ai-disclosure-copy">
-          <strong className={streaming ? "shimmer-text" : ""}>{streaming ? "正在思考…" : "思考过程"}</strong>
-          {!streaming && duration && <small>用时 {duration} 秒</small>}
-        </span>
-        <span className={`ai-chevron ${open ? "open" : ""}`}><Glyph name="chevron" size={14} /></span>
+    <div className="ai-fold">
+      <button
+        aria-expanded={open}
+        className={`ai-fold-toggle ${streaming ? "shimmer-text" : ""}`}
+        onClick={() => setOpen((value) => !value)}
+        type="button"
+      >
+        {label}
       </button>
-      {open && (
-        <div className="ai-reasoning-content">
-          {text ? <p>{text}</p> : <div className="reasoning-skeleton"><i /><i /><i /></div>}
-        </div>
-      )}
-    </section>
+      {open && <p className="ai-fold-body">{text || "…"}</p>}
+    </div>
   );
 }
 
@@ -237,13 +215,13 @@ function PlanPanel({
   return (
     <section className="ai-plan">
       <button aria-expanded={open} className="ai-disclosure-trigger" onClick={() => setOpen((value) => !value)} type="button">
-        <span className="ai-activity-icon plan"><Glyph name="plan" /></span>
+        <span className="ai-activity-icon plan"><PlanGlyph name="plan" /></span>
         <span className="ai-disclosure-copy">
           <strong>实施计划</strong>
           <small>{plan.steps.length} 个步骤 · {streaming ? "执行中" : "已完成"}</small>
         </span>
         <span className="ai-plan-badge">{streaming ? "RUNNING" : "DONE"}</span>
-        <span className={`ai-chevron ${open ? "open" : ""}`}><Glyph name="chevron" size={14} /></span>
+        <span className={`ai-chevron ${open ? "open" : ""}`}><PlanGlyph name="chevron" size={14} /></span>
       </button>
       {open && (
         <div className="ai-plan-content">
@@ -280,7 +258,7 @@ const TOOL_LABELS: Record<string, string> = {
 
 function formatDuration(durationMs?: number) {
   if (durationMs === undefined) return "";
-  return durationMs < 1000 ? `${Math.max(1, Math.round(durationMs))} ms` : `${(durationMs / 1000).toFixed(1)} s`;
+  return durationMs < 1000 ? `${Math.max(1, Math.round(durationMs))}ms` : `${(durationMs / 1000).toFixed(1)}s`;
 }
 
 function ToolActivity({ tool }: { tool: AgentToolActivity }) {
@@ -300,78 +278,83 @@ function ToolActivity({ tool }: { tool: AgentToolActivity }) {
     };
   }, [tool.status]);
 
-  const label = TOOL_LABELS[tool.name] || tool.name;
+  const name = TOOL_LABELS[tool.name] || tool.name;
+  const status =
+    tool.status === "running"
+      ? "运行中"
+      : tool.status === "error"
+        ? "失败"
+        : formatDuration(tool.durationMs) || "完成";
+  const label = [name, tool.detail, status].filter(Boolean).join(" · ");
+
   return (
-    <article className="ai-tool" data-status={tool.status}>
-      <button aria-expanded={open} className="ai-tool-trigger" onClick={() => setOpen((value) => !value)} type="button">
-        <span className="ai-tool-status">
-          {tool.status === "running" ? <i /> : <Glyph name={tool.status === "error" ? "alert" : "check"} size={13} />}
-        </span>
-        <span className="ai-tool-copy">
-          <strong>{label}</strong>
-          {tool.detail && <small>{tool.detail}</small>}
-        </span>
-        <span className="ai-tool-badge">
-          {tool.status === "running" ? "运行中" : tool.status === "error" ? "失败" : formatDuration(tool.durationMs) || "完成"}
-        </span>
-        <span className={`ai-chevron ${open ? "open" : ""}`}><Glyph name="chevron" size={13} /></span>
+    <div className="ai-fold">
+      <button
+        aria-expanded={open}
+        className={`ai-fold-toggle ${tool.status === "running" ? "shimmer-text" : ""} ${tool.status === "error" ? "is-error" : ""}`}
+        onClick={() => setOpen((value) => !value)}
+        type="button"
+      >
+        {label}
       </button>
       {open && (
-        <div className="ai-tool-content">
-          <span><Glyph name="tool" size={13} /> Sandbox Tool</span>
-          <code>{tool.name}</code>
-          {tool.error ? <p>{tool.error}</p> : <small>{tool.status === "running" ? "正在安全地操作虚拟文件…" : "调用已成功完成"}</small>}
-        </div>
+        <p className="ai-fold-body">
+          {tool.error
+            ? tool.error
+            : tool.status === "running"
+              ? "正在操作虚拟文件…"
+              : `${tool.name} 已完成`}
+        </p>
       )}
-    </article>
-  );
-}
-
-function ToolActivityList({ tools }: { tools: AgentToolActivity[] }) {
-  const completed = tools.filter((tool) => tool.status === "completed").length;
-  return (
-    <section className="ai-tools">
-      <header>
-        <span><Glyph name="tool" size={14} /> 工具调用</span>
-        <small>{completed}/{tools.length} 完成</small>
-      </header>
-      <div>{tools.map((tool) => <ToolActivity key={tool.id} tool={tool} />)}</div>
-    </section>
+    </div>
   );
 }
 
 function ChangedFiles({ paths }: { paths: string[] }) {
+  const [open, setOpen] = useState(true);
   return (
-    <section className="ai-changed-files">
-      <header><span><Glyph name="file" size={14} /> 已更新文件</span><small>{paths.length}</small></header>
-      {paths.map((path) => <div key={path}><code>{path}</code><span><Glyph name="check" size={12} /> 已修改</span></div>)}
-    </section>
+    <div className="ai-fold">
+      <button
+        aria-expanded={open}
+        className="ai-fold-toggle"
+        onClick={() => setOpen((value) => !value)}
+        type="button"
+      >
+        已更新 {paths.length} 个文件
+      </button>
+      {open && (
+        <ul className="ai-fold-body">
+          {paths.map((path) => <li key={path}>{path}</li>)}
+        </ul>
+      )}
+    </div>
   );
 }
 
 export function AgentResponse({ message, status }: { message: ChatMessage; status: string }) {
   const tagged = useMemo(() => splitTaggedReasoning(message.text), [message.text]);
-  const reasoning = useMemo(
-    () => [...new Set([message.reasoning?.trim(), tagged.reasoning].filter((value): value is string => Boolean(value)))].join("\n\n"),
-    [message.reasoning, tagged.reasoning],
-  );
-  const tools = message.tools ?? [];
-  const hasActiveTool = tools.some((tool) => tool.status === "running");
-  const showStatus = message.streaming && !message.reasoningStreaming && !hasActiveTool;
+  const parts = message.parts ?? [];
+  const hasTools = parts.some((part) => part.type === "tool");
+  const hasReasoningParts = parts.some((part) => part.type === "reasoning");
+  const hasActiveTool = parts.some((part) => part.type === "tool" && part.tool.status === "running");
+  const reasoningStreaming = parts.some((part) => part.type === "reasoning" && part.streaming);
+  const showStatus = message.streaming && !reasoningStreaming && !hasActiveTool;
+  // Fallback when think tags land in text without stream reasoning parts.
+  const fallbackReasoning = !hasReasoningParts ? tagged.reasoning : "";
 
   return (
     <>
-      {message.plan && <PlanPanel hasTools={tools.length > 0} plan={message.plan} streaming={Boolean(message.streaming)} />}
-      <ReasoningPanel streaming={Boolean(message.reasoningStreaming)} text={reasoning} />
-      {tools.length > 0 && <ToolActivityList tools={tools} />}
+      {message.plan && <PlanPanel hasTools={hasTools} plan={message.plan} streaming={Boolean(message.streaming)} />}
+      {parts.map((part) => {
+        if (part.type === "reasoning") {
+          return <ReasoningPanel key={part.id} streaming={Boolean(part.streaming)} text={part.text} />;
+        }
+        return <ToolActivity key={part.tool.id} tool={part.tool} />;
+      })}
+      {fallbackReasoning ? <ReasoningPanel streaming={false} text={fallbackReasoning} /> : null}
       {tagged.response && <MessageResponse streaming={message.streaming}>{tagged.response}</MessageResponse>}
       {message.changed?.length ? <ChangedFiles paths={message.changed} /> : null}
-      {showStatus && (
-        <div className="ai-live-status">
-          <span className="ai-live-orbit"><i /></span>
-          <span className="shimmer-text">{status}</span>
-        </div>
-      )}
+      {showStatus && <p className="ai-fold-toggle shimmer-text">{status}</p>}
     </>
   );
 }

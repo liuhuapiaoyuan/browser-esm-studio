@@ -66,6 +66,9 @@ export function createLanguageModel(settings: AiSettings = loadAiSettings()): La
     name: "custom",
     apiKey: settings.apiKey,
     baseURL,
+    // Ask the provider for a final stream chunk with usage (prompt_tokens / …).
+    // MiniMax & OpenAI-compatible APIs leave usage:null on intermediate chunks otherwise.
+    includeUsage: true,
   });
   return wrapLanguageModel({
     model: provider.chatModel(settings.model),

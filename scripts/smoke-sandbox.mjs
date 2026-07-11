@@ -66,6 +66,27 @@ try {
     return true;
   });
 
+  // word: identifier boundaries
+  sandbox.write(
+    "src/word.ts",
+    "const hello = 1;\nconst helloWorld = 2;\nconst xhello = 3;\n",
+  );
+  const wordMatches = sandbox.grep("hello", { word: true, paths: ["src/word.ts"] });
+  assert.equal(wordMatches.length, 1);
+  assert.equal(wordMatches[0].line, 1);
+  assert.equal(sandbox.grep("hello", { paths: ["src/word.ts"] }).length, 3);
+
+  assert.throws(() => sandbox.grep("x", { word: true, fuzzy: true }), (error) => {
+    assert.equal(error.code, "INVALID_OPERATION");
+    return true;
+  });
+
+  // context: before/after lines
+  const withContext = sandbox.grep("helloAgain", { context: 1, paths: ["src/a.ts"] });
+  assert.equal(withContext.length, 1);
+  assert.deepEqual(withContext[0].before, ["const hello = 'world';"]);
+  assert.deepEqual(withContext[0].after, [""]);
+
   // replace: literal first match by default
   const replaceOnce = sandbox.replace("src/a.ts", "world", "orbit");
   assert.deepEqual(replaceOnce.changed, ["src/a.ts"]);
