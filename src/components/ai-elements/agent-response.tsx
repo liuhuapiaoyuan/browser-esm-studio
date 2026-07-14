@@ -226,6 +226,7 @@ function PlanPanel({
       {open && (
         <div className="ai-plan-content">
           <p className="ai-plan-summary">{plan.summary}</p>
+          {plan.approach ? <p className="ai-plan-approach">{plan.approach}</p> : null}
           <ol>
             {plan.steps.map((step, index) => (
               <li key={step.id}>
@@ -261,13 +262,41 @@ function formatDuration(durationMs?: number) {
   return durationMs < 1000 ? `${Math.max(1, Math.round(durationMs))}ms` : `${(durationMs / 1000).toFixed(1)}s`;
 }
 
+const FILE_BODY_TOOLS = new Set(["writeFile", "addFile", "replaceInFile"]);
+const STREAM_CODE_MAX_LINES = 48;
+
+/** Split so the caret sits on the growing last line while file args stream. */
+function StreamingFileContent({ content, streaming }: { content: string; streaming: boolean }) {
+  const lines = content.split("\n");
+  const omitted = Math.max(0, lines.length - STREAM_CODE_MAX_LINES);
+  const visible = omitted > 0 ? lines.slice(-STREAM_CODE_MAX_LINES) : lines;
+  const last = visible[visible.length - 1] ?? "";
+  const head = visible.slice(0, -1);
+
+  return (
+    <pre className="ai-tool-code">
+      {omitted > 0 ? <span className="ai-tool-code-omit">… {omitted} lines above{"\n"}</span> : null}
+      {head.length > 0 ? `${head.join("\n")}\n` : null}
+      <span className="ai-tool-code-tail">
+        {last}
+        {streaming ? <span className="stream-caret" /> : null}
+      </span>
+    </pre>
+  );
+}
+
 function ToolActivity({ tool }: { tool: AgentToolActivity }) {
-  const [open, setOpen] = useState(tool.status === "running");
+  const isFileBody = FILE_BODY_TOOLS.has(tool.name);
+  const streamingArgs = Boolean(tool.inputStreaming);
+  const hasContent = typeof tool.content === "string";
+  const showCode = isFileBody && (hasContent || streamingArgs) && (streamingArgs || tool.status === "running");
+  const [open, setOpen] = useState(tool.status === "running" || streamingArgs);
   const previousStatus = useRef(tool.status);
+  const bodyRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let closeTimer: number | undefined;
-    if (tool.status === "running") setOpen(true);
+    if (tool.status === "running" || tool.inputStreaming) setOpen(true);
     if (previousStatus.current === "running" && tool.status === "completed") {
       closeTimer = window.setTimeout(() => setOpen(false), 650);
     }
@@ -276,35 +305,51 @@ function ToolActivity({ tool }: { tool: AgentToolActivity }) {
     return () => {
       if (closeTimer) window.clearTimeout(closeTimer);
     };
-  }, [tool.status]);
+  }, [tool.status, tool.inputStreaming]);
+
+  useEffect(() => {
+    if (!showCode || !tool.inputStreaming) return;
+    const el = bodyRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [tool.content, showCode, tool.inputStreaming]);
 
   const name = TOOL_LABELS[tool.name] || tool.name;
   const status =
-    tool.status === "running"
-      ? "运行中"
-      : tool.status === "error"
-        ? "失败"
-        : formatDuration(tool.durationMs) || "完成";
+    tool.inputStreaming
+      ? isFileBody
+        ? tool.name === "replaceInFile"
+          ? "流式编辑中"
+          : "流式写入中"
+        : "参数生成中"
+      : tool.status === "running"
+        ? "运行中"
+        : tool.status === "error"
+          ? "失败"
+          : formatDuration(tool.durationMs) || "完成";
   const label = [name, tool.detail, status].filter(Boolean).join(" · ");
 
   return (
     <div className="ai-fold">
       <button
         aria-expanded={open}
-        className={`ai-fold-toggle ${tool.status === "running" ? "shimmer-text" : ""} ${tool.status === "error" ? "is-error" : ""}`}
+        className={`ai-fold-toggle ${tool.status === "running" || tool.inputStreaming ? "shimmer-text" : ""} ${tool.status === "error" ? "is-error" : ""}`}
         onClick={() => setOpen((value) => !value)}
         type="button"
       >
         {label}
       </button>
       {open && (
-        <p className="ai-fold-body">
+        <div className="ai-fold-body" ref={bodyRef}>
           {tool.error
             ? tool.error
-            : tool.status === "running"
-              ? "正在操作虚拟文件…"
-              : `${tool.name} 已完成`}
-        </p>
+            : showCode
+              ? <StreamingFileContent content={tool.content ?? ""} streaming={streamingArgs} />
+              : tool.inputStreaming
+                ? <StreamingFileContent content="" streaming />
+                : tool.status === "running"
+                  ? "正在操作虚拟文件…"
+                  : `${tool.name} 已完成`}
+        </div>
       )}
     </div>
   );
@@ -336,7 +381,7 @@ export function AgentResponse({ message, status }: { message: ChatMessage; statu
   const parts = message.parts ?? [];
   const hasTools = parts.some((part) => part.type === "tool");
   const hasReasoningParts = parts.some((part) => part.type === "reasoning");
-  const hasActiveTool = parts.some((part) => part.type === "tool" && part.tool.status === "running");
+  const hasActiveTool = parts.some((part) => part.type === "tool" && (part.tool.status === "running" || part.tool.inputStreaming));
   const reasoningStreaming = parts.some((part) => part.type === "reasoning" && part.streaming);
   const showStatus = message.streaming && !reasoningStreaming && !hasActiveTool;
   // Fallback when think tags land in text without stream reasoning parts.

@@ -29,6 +29,10 @@ export type AgentToolActivity = {
   status: "running" | "completed" | "error";
   durationMs?: number;
   error?: string;
+  /** Decoded file body while write/add/replace args stream in (or at execute). */
+  content?: string;
+  /** True while the model is still streaming tool-call JSON. */
+  inputStreaming?: boolean;
 };
 
 /** Ordered stream of assistant activity (reasoning segments + tools). */
@@ -42,6 +46,7 @@ export type ChatMessage = {
   changed?: string[];
   plan?: {
     summary: string;
+    approach?: string;
     steps: ChatPlanStep[];
   };
   /** Chronological reasoning / tool activity for this turn. */

@@ -65,6 +65,7 @@ button:disabled { cursor: not-allowed; opacity: .35; }
 .ai-chevron.open { color: #92979b; transform: rotate(180deg); }
 .ai-plan-content { padding: 10px 12px 12px; border-top: 1px solid #282c2f; animation: revealPanel .2s ease both; }
 .ai-plan-summary { margin: 0 0 11px !important; color: #9da19e !important; font-size: 10px !important; line-height: 1.55 !important; }
+.ai-plan-approach { margin: -6px 0 11px !important; padding: 7px 9px; color: #8fa568 !important; border: 1px solid #333a2e; border-radius: 8px; background: rgba(201,250,112,.04); font-size: 9px !important; line-height: 1.5 !important; }
 .ai-plan-content ol { margin: 0; padding: 0; display: grid; gap: 9px; list-style: none; }
 .ai-plan-content li { position: relative; display: grid; grid-template-columns: 21px minmax(0, 1fr); gap: 8px; }
 .ai-plan-content li:not(:last-child)::after { position: absolute; top: 21px; bottom: -10px; left: 10px; width: 1px; background: #30352e; content: ""; }
@@ -80,9 +81,14 @@ button:disabled { cursor: not-allowed; opacity: .35; }
 .ai-fold-toggle.is-error { color: #c97873; }
 .ai-fold-toggle.is-error:hover { color: #e98780; }
 .ai-fold-body { margin: 4px 0 0; max-height: 160px; overflow-y: auto; color: #7a8085; font-size: 11px; line-height: 1.55; white-space: pre-wrap; scrollbar-width: thin; scrollbar-color: #363b3f transparent; }
+.ai-fold-body:has(.ai-tool-code) { max-height: 240px; }
 .ai-fold-body p { margin: 0 0 6px; }
 .ai-fold-body ol, .ai-fold-body ul { margin: 0; padding-left: 1.2em; display: grid; gap: 3px; list-style: decimal; }
 .ai-fold-body ul { list-style: none; padding-left: 0; font-family: "JetBrains Mono", monospace; font-size: 10px; color: #6f7479; }
+.ai-tool-code { margin: 0; padding: 8px 9px; overflow: hidden; color: #b7bcb4; border: 1px solid #2c3033; border-radius: 8px; background: #0e1012; font: 10px/1.55 "JetBrains Mono", monospace; white-space: pre-wrap; word-break: break-word; }
+.ai-tool-code-omit { color: #596066; }
+.ai-tool-code-tail { display: inline; }
+.ai-tool-code .stream-caret { margin-left: 1px; vertical-align: -2px; }
 .shimmer-text { color: transparent !important; background: linear-gradient(90deg, #737973 20%, #d7e2c7 48%, #737973 76%); background-size: 220% 100%; background-clip: text; animation: shimmer 1.8s linear infinite; }
 .ai-message-response { position: relative; margin: 3px 0 0; color: #b9bcba; font-size: 13px; line-height: 1.68; overflow-wrap: anywhere; }
 .ai-message-response > :first-child { margin-top: 0; }

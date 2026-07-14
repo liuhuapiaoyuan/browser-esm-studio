@@ -271,11 +271,13 @@ function formatElementPickPrompt(
 function ChatPanel({
   sandbox,
   getPreviewErrors,
+  waitForPreviewErrors,
   getFiles,
   submitRef,
 }: {
   sandbox: Sandbox;
   getPreviewErrors: () => string[];
+  waitForPreviewErrors: (settleMs?: number) => Promise<string[]>;
   getFiles: () => FileMap;
   submitRef?: { current: ((text: string) => void) | null };
 }) {
@@ -391,6 +393,10 @@ function ChatPanel({
         history,
         conversationSummary,
         previewErrors: getPreviewErrors(),
+        previewConsole: {
+          getErrors: getPreviewErrors,
+          waitForErrors: waitForPreviewErrors,
+        },
         abortSignal: controller.signal,
         onProgress: (event) => {
           setProgress(event);
@@ -485,10 +491,7 @@ function ChatPanel({
           result: completed,
           aborted: false,
           getPreviewErrors,
-          waitForPreviewErrors: (settleMs = 1800) =>
-            new Promise((resolve) => {
-              window.setTimeout(() => resolve(getPreviewErrors()), settleMs);
-            }),
+          waitForPreviewErrors,
           getFiles,
           typecheck: () => typecheckProject(getFiles()),
         },
@@ -1024,6 +1027,19 @@ export function App() {
           logsRef.current
             .filter((log) => log.level === "error" || log.level === "warn")
             .map((log) => log.message)
+        }
+        waitForPreviewErrors={(settleMs = 1800) =>
+          new Promise((resolve) => {
+            window.setTimeout(
+              () =>
+                resolve(
+                  logsRef.current
+                    .filter((log) => log.level === "error" || log.level === "warn")
+                    .map((log) => log.message),
+                ),
+              settleMs,
+            );
+          })
         }
       />
       <main className="workspace">

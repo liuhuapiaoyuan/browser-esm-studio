@@ -185,6 +185,8 @@ export default clsx;
 `,
     "class-variance-authority": `import type { ClassValue } from "clsx";
 
+// Keep props closed (no \`[key: string]: any\`) so intersecting with
+// ButtonHTMLAttributes etc. does not wipe out onClick/type checking.
 export type VariantProps<Component extends (...args: any) => any> = Omit<
   NonNullable<Parameters<Component>[0]>,
   "class" | "className"
@@ -195,9 +197,15 @@ export declare function cva(
   config?: {
     variants?: Record<string, Record<string, ClassValue>>;
     defaultVariants?: Record<string, string | number | boolean | null>;
-    compoundVariants?: Array<Record<string, any>>;
+    compoundVariants?: Array<Record<string, unknown>>;
   },
-): (props?: Record<string, any>) => string;
+): (props?: {
+  class?: ClassValue;
+  className?: ClassValue;
+  variant?: string | number | boolean | null;
+  size?: string | number | boolean | null;
+  side?: string | number | boolean | null;
+}) => string;
 `,
   };
 
@@ -218,15 +226,37 @@ export declare function cva(
   return out;
 }
 
-function rootNamesFromFiles(files: FileMap): string[] {
+function isViteConfigPath(path: string): boolean {
+  return /(^|\/)vite\.config\.[cm]?[tj]s$/i.test(path);
+}
+
+/** Implementation roots (.ts/.tsx) — excludes ambient .d.ts and vite.config. */
+function implementationRootNames(files: FileMap): string[] {
   return Object.keys(files)
     .filter(
       (path) =>
         /\.(tsx|ts)$/i.test(path) &&
         !path.endsWith(".d.ts") &&
-        !/(^|\/)vite\.config\.[cm]?[tj]s$/i.test(path),
+        !isViteConfigPath(path),
     )
     .map(normalizeVirtualPath);
+}
+
+/**
+ * Full program roots: implementation files + project ambient .d.ts
+ * (so `declare module "*.svg"` etc. apply). node_modules types come from the VFS map.
+ */
+function programRootNames(files: FileMap): string[] {
+  const impl = implementationRootNames(files);
+  const ambient = Object.keys(files)
+    .filter(
+      (path) =>
+        path.endsWith(".d.ts") &&
+        !path.includes("node_modules/") &&
+        !path.includes("node_modules\\"),
+    )
+    .map(normalizeVirtualPath);
+  return [...impl, ...ambient];
 }
 
 function resolveTsModule(mod: { default?: TsModule } & TsModule): TsModule {
@@ -300,8 +330,9 @@ export async function typecheckProject(files: FileMap): Promise<TypecheckResult>
   }
   options.paths = pathMap;
 
-  const rootNames = rootNamesFromFiles(files);
-  if (rootNames.length === 0) {
+  const implRoots = implementationRootNames(files);
+  const rootNames = programRootNames(files);
+  if (implRoots.length === 0) {
     return { ok: true, diagnostics: [], checkedFiles: 0 };
   }
 
@@ -362,7 +393,7 @@ export async function typecheckProject(files: FileMap): Promise<TypecheckResult>
   return {
     ok: errors.length === 0,
     diagnostics: formatted,
-    checkedFiles: rootNames.length,
+    checkedFiles: implRoots.length,
   };
 }
 

@@ -10,6 +10,72 @@ function toolError(error: unknown) {
 }
 
 const MAX_PER_FILE = 20;
+/** Max lines returned from a windowed readFile (around / start–end). */
+const MAX_READ_WINDOW = 200;
+const DEFAULT_READ_RADIUS = 40;
+
+/**
+ * Slice a file for progressive exploration after grep.
+ * Windowed reads include `LINE|` prefixes so the agent can map hits; full reads stay raw.
+ */
+function formatReadWindow(
+  content: string,
+  options: {
+    startLine?: number;
+    endLine?: number;
+    around?: number;
+    radius?: number;
+  },
+) {
+  const lines = content.split("\n");
+  const totalLines = lines.length;
+  const hasWindow =
+    options.around != null || options.startLine != null || options.endLine != null;
+
+  if (!hasWindow) {
+    return {
+      content,
+      startLine: 1,
+      endLine: totalLines,
+      totalLines,
+      windowed: false as const,
+    };
+  }
+
+  let start: number;
+  let end: number;
+
+  if (options.around != null) {
+    const center = Math.max(1, Math.floor(options.around));
+    const radius = Math.min(
+      80,
+      Math.max(0, Math.floor(options.radius ?? DEFAULT_READ_RADIUS)),
+    );
+    start = Math.max(1, center - radius);
+    end = Math.min(totalLines, center + radius);
+  } else {
+    start = Math.max(1, Math.floor(options.startLine ?? 1));
+    end = Math.min(totalLines, Math.floor(options.endLine ?? totalLines));
+    if (end < start) end = start;
+  }
+
+  if (end - start + 1 > MAX_READ_WINDOW) {
+    end = start + MAX_READ_WINDOW - 1;
+  }
+
+  const slice = lines.slice(start - 1, end);
+  const numbered = slice
+    .map((line, index) => `${String(start + index).padStart(4, " ")}|${line}`)
+    .join("\n");
+
+  return {
+    content: numbered,
+    startLine: start,
+    endLine: Math.min(end, totalLines),
+    totalLines,
+    windowed: true as const,
+  };
+}
 
 /** Group / trim grep hits so the agent gets actionable clues without blowing the tool-result budget. */
 function formatGrepResult(
@@ -91,13 +157,41 @@ export function createSandboxTools(sandbox: Sandbox) {
     }),
 
     readFile: tool({
-      description: "Read a virtual file by relative path.",
+      description:
+        "Read a virtual file. Full file by default. After grep, expand around a hit with around+radius (or startLine/endLine). Windowed content is prefixed with `LINE|` for line mapping — strip prefixes before replaceInFile.",
       inputSchema: z.object({
         path: z.string().describe("Relative path, e.g. src/App.tsx"),
+        around: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("1-based center line from a grep hit; expands with radius"),
+        radius: z
+          .number()
+          .int()
+          .min(0)
+          .max(80)
+          .optional()
+          .describe("Lines before/after `around` (default 40)"),
+        startLine: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("1-based inclusive start (alternative to around)"),
+        endLine: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("1-based inclusive end (alternative to around)"),
       }),
-      execute: async ({ path }) => {
+      execute: async ({ path, around, radius, startLine, endLine }) => {
         try {
-          return { ok: true as const, path, content: sandbox.read(path) };
+          const raw = sandbox.read(path);
+          const window = formatReadWindow(raw, { around, radius, startLine, endLine });
+          return { ok: true as const, path, ...window };
         } catch (error) {
           return toolError(error);
         }
@@ -106,7 +200,7 @@ export function createSandboxTools(sandbox: Sandbox) {
 
     grep: tool({
       description:
-        "Search file contents. Modes: literal (default), regex=true, fuzzy=true (subsequence), or word=true (identifier boundaries). outputMode=files lists paths+counts; content (default) returns hits with context lines. Prefer files first when unsure, then content on a few paths. Do not combine regex/word with fuzzy.",
+        "Search file contents (progressive explore step 1). Modes: literal (default), regex=true, fuzzy=true (subsequence), or word=true (identifier boundaries). outputMode=files lists paths+counts; content returns hits with small context. When a hit looks relevant, follow up with readFile(path, around=line) to expand — do not rely on large grep context alone. Do not combine regex/word with fuzzy.",
       inputSchema: z.object({
         query: z.string().describe("Search text, RegExp source, or fuzzy query"),
         regex: z.boolean().optional().describe("Treat query as RegExp"),
@@ -130,7 +224,7 @@ export function createSandboxTools(sandbox: Sandbox) {
           .min(0)
           .max(10)
           .optional()
-          .describe("Lines of before/after context per hit (default 2 for content mode)"),
+          .describe("Lines of before/after context per hit (default 2 for content mode; use readFile to expand further)"),
         outputMode: z
           .enum(["files", "content"])
           .optional()

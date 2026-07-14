@@ -59,7 +59,7 @@
 
 ## Codegen（本工作室）
 
-在 Browser ESM Studio Preview 内 **不要** 跑 `pnpm ddb:codegen`。用：
+用：
 
 ```json
 { "operation": "codegen" }
