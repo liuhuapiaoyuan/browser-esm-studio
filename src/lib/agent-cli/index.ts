@@ -14,6 +14,7 @@ export { AgentCliCommandError } from "./protocol";
 export { defineCommand, definePlugin } from "./define-command";
 export { createAgentCliRuntime, type AgentCliRuntime } from "./runtime";
 export { createAgentCliTools } from "./bridge-ai-sdk";
+export { coerceCliExecuteInput, normalizeCommandArguments } from "./normalize-args";
 export { createRegistry } from "./registry";
 export { validateInput } from "./validator";
 export {

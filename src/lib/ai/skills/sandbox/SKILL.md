@@ -19,8 +19,19 @@
 | 命令 | 参数 | 说明 |
 |------|------|------|
 | `sandbox.listFiles` | `{}` 或 `{ "include": "all" }` | 列出全部文件路径 |
-| `sandbox.readFile` | `path`；可选 `around`+`radius`(默认40,max80) 或 `startLine`+`endLine` | 全文或行号窗口读取 |
+| `sandbox.readFile` | 见下方 | 全文或行号窗口读取 |
 | `sandbox.grep` | `query`；可选 `regex`/`fuzzy`/`word`/`caseSensitive`/`paths`/`glob`/`context`(0–10)/`outputMode`(`files`\|`content`)/`maxResults` | 搜索；勿同时组合 regex/word 与 fuzzy |
+
+#### `sandbox.readFile` 参数（易错）
+
+- **默认全文**：只传 `{ "path": "src/App.tsx" }`，不要无故加 `startLine` / `endLine` / `around`。
+- **grep 后扩窗（首选）**：`{ "path": "...", "around": 40, "radius": 40 }`（`radius` 默认 40，最大 80）。
+- **固定区间（少用）**：`{ "path": "...", "startLine": 10, "endLine": 80 }`。
+- **行号必须是 JSON number**：写 `40`，禁止 `"40"` / `null` / `""`；缺参数就省略字段，不要填占位值。
+
+```json
+{ "command": "sandbox.readFile", "arguments": { "path": "src/App.tsx", "around": 40 } }
+```
 
 ### 写
 

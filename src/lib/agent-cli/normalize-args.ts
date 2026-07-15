@@ -27,6 +27,43 @@ const KEY_ALIASES: Record<string, string> = {
   batch_operation: "batchOperation",
 };
 
+/** Models often emit line/count fields as numeric strings ("40") — coerce before Zod. */
+const NUMERIC_KEYS = new Set([
+  "around",
+  "radius",
+  "startLine",
+  "endLine",
+  "context",
+  "maxResults",
+  "waitMs",
+  "page",
+  "pageSize",
+  "limit",
+  "seed",
+  "numInferenceSteps",
+  "guidanceScale",
+  "cfg",
+]);
+
+function coerceNumericValue(value: unknown): unknown {
+  if (typeof value === "number") return value;
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  if (!trimmed || !/^-?\d+(\.\d+)?$/.test(trimmed)) return value;
+  const n = Number(trimmed);
+  return Number.isFinite(n) ? n : value;
+}
+
+function coerceNumericFields(
+  input: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...input };
+  for (const key of NUMERIC_KEYS) {
+    if (key in out) out[key] = coerceNumericValue(out[key]);
+  }
+  return out;
+}
+
 const OP_TYPE_ALIASES: Record<string, string> = {
   write: "write",
   writeFile: "write",
@@ -115,7 +152,15 @@ export function normalizeCommandArguments(
     }
   }
 
-  let normalized = renameKeys(obj);
+  let normalized = coerceNumericFields(renameKeys(obj));
+
+  // Empty / null optional numbers → omit (models often send startLine: null|"")
+  for (const key of NUMERIC_KEYS) {
+    const v = normalized[key];
+    if (v === null || v === "" || (typeof v === "number" && Number.isNaN(v))) {
+      delete normalized[key];
+    }
+  }
 
   if (command === "sandbox.applyOperations" || command.endsWith(".applyOperations")) {
     const ops = normalized.operations ?? normalized.ops ?? normalized.changes;

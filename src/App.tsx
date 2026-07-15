@@ -322,6 +322,7 @@ function ChatPanel({
     [requestedSkillIds],
   );
   const scrollRef = useRef<HTMLDivElement>(null);
+  const stickToBottomRef = useRef(true);
   const abortRef = useRef<AbortController | null>(null);
   const workingRef = useRef(false);
   /** Rolling summary of older chat turns — UI keeps full messages, model gets this. */
@@ -330,7 +331,14 @@ function ChatPanel({
   const [contextUsed, setContextUsed] = useState(0);
   const configured = isAiConfigured(settings);
 
+  function onMessagesScroll() {
+    const el = scrollRef.current;
+    if (!el) return;
+    stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 80;
+  }
+
   useEffect(() => {
+    if (!stickToBottomRef.current) return;
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, working, progress]);
 
@@ -696,7 +704,7 @@ function ChatPanel({
         </div>
         <span className="model-pill">{settings.model || "未选模型"}</span>
       </div>
-      <div className="messages" ref={scrollRef}>
+      <div className="messages" ref={scrollRef} onScroll={onMessagesScroll}>
         <div className="project-intro">
           <div className="intro-orb intro-orb-one" />
           <div className="intro-orb intro-orb-two" />

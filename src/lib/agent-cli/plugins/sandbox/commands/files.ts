@@ -38,13 +38,23 @@ export const sandboxReadFile = defineCommand({
     useWhen: ["需要看文件内容", "grep 命中后扩展"],
     avoidWhen: ["只想搜关键词（用 sandbox.grep）"],
     instructions: [
+      "默认只传 path（全文）。窗口优先用 around（number），不要默认塞 startLine",
+      "around / radius / startLine / endLine 必须是 JSON number，禁止字符串 \"40\"、null、空串",
       "窗口读取返回 LINE| 前缀 — 写入 replaceInFile 前必须去掉前缀",
       "优先窗口读取，不要一上来读整个大文件",
     ],
     examples: [
       {
+        userRequest: "打开 src/App.tsx",
+        input: { path: "src/App.tsx" },
+      },
+      {
         userRequest: "看看 App.tsx 第 40 行附近",
         input: { path: "src/App.tsx", around: 40, radius: 40 },
+      },
+      {
+        userRequest: "读 App.tsx 第 10–80 行",
+        input: { path: "src/App.tsx", startLine: 10, endLine: 80 },
       },
     ],
   },
@@ -55,16 +65,26 @@ export const sandboxReadFile = defineCommand({
       .int()
       .positive()
       .optional()
-      .describe("1-based center line from a grep hit; expands with radius"),
+      .describe("JSON number (not string). 1-based center line from grep; expands with radius"),
     radius: z
       .number()
       .int()
       .min(0)
       .max(80)
       .optional()
-      .describe("Lines before/after `around` (default 40)"),
-    startLine: z.number().int().positive().optional().describe("1-based inclusive start"),
-    endLine: z.number().int().positive().optional().describe("1-based inclusive end"),
+      .describe("JSON number. Lines before/after `around` (default 40)"),
+    startLine: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe("JSON number (not string). 1-based inclusive start; prefer `around` when possible"),
+    endLine: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe("JSON number (not string). 1-based inclusive end"),
   }),
   safety: { risk: "read", sideEffect: false, idempotent: true },
   recovery: {

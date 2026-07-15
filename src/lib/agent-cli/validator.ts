@@ -4,11 +4,21 @@ import type { CommandErrorInfo } from "./protocol";
 export type ValidateOk<T> = { ok: true; data: T };
 export type ValidateFail = { ok: false; error: CommandErrorInfo };
 
+/** Zod 4 often omits `received` on invalid_type; parse it from `message` when missing. */
+function receivedFromIssue(issue: z.ZodIssue): string {
+  if ("received" in issue && issue.received != null) {
+    return String(issue.received);
+  }
+  const match = /received\s+(\S+)\s*$/i.exec(issue.message);
+  if (match?.[1]) return match[1].replace(/[.,;]+$/, "");
+  return "unknown";
+}
+
 function formatIssue(issue: z.ZodIssue): string {
   const path = issue.path.length ? issue.path.map(String).join(".") : "(root)";
   if (issue.code === "invalid_type") {
     const expected = "expected" in issue ? String(issue.expected) : "value";
-    const received = "received" in issue ? String(issue.received) : "invalid";
+    const received = receivedFromIssue(issue);
     if (received === "undefined") {
       return `${path}: 缺少必填字段（期望 ${expected}）`;
     }

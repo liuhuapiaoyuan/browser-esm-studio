@@ -86,6 +86,28 @@ const read = await runtime.execute("sandbox.readFile", { path: "src/hello.ts" })
 assert.equal(read.ok, true);
 assert.match(String(read.data?.content ?? ""), /hello/);
 
+// Models often pass line numbers as strings — normalize-args must coerce
+const readWindow = await runtime.execute("sandbox.readFile", {
+  path: "src/hello.ts",
+  around: "1",
+  radius: "20",
+});
+assert.equal(readWindow.ok, true, readWindow.error?.message);
+assert.match(String(readWindow.data?.content ?? ""), /hello/);
+
+const readRange = await runtime.execute("sandbox.readFile", {
+  path: "src/hello.ts",
+  startLine: "1",
+  endLine: "10",
+});
+assert.equal(readRange.ok, true, readRange.error?.message);
+
+const readNullLine = await runtime.execute("sandbox.readFile", {
+  path: "src/hello.ts",
+  startLine: null,
+});
+assert.equal(readNullLine.ok, true, readNullLine.error?.message);
+
 const grep = await runtime.execute("sandbox.grep", {
   query: "hello",
   outputMode: "files",
