@@ -25,6 +25,8 @@ export type ChatPlanStep = {
 export type AgentToolActivity = {
   id: string;
   name: string;
+  /** Human-readable label (e.g. Agent CLI command title); preferred over name in UI. */
+  title?: string;
   detail?: string;
   status: "running" | "completed" | "error";
   durationMs?: number;

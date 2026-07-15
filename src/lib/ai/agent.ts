@@ -4,13 +4,16 @@ import type { Sandbox } from "../sandbox";
 import type { AgentToolActivity } from "../../types";
 import { compactLoopMessages, estimateTextTokens, prepareHistoryContext } from "./context";
 import { createLanguageModel } from "./provider";
-import { createSandboxTools } from "./sandboxTools";
-import { createDdbTools } from "./ddbTools";
 import { createSkillTools } from "./skillTools";
-import { createTypecheckTools } from "./typecheckTools";
-import { createPreviewTools, type PreviewConsoleAccess } from "./previewTools";
 import { buildSkillsPromptSection } from "./skills/registry";
 import { compactThreshold, isAiConfigured, loadAiSettings, type AiSettings } from "./settings";
+import {
+  createAgentCliRuntime,
+  createAgentCliTools,
+  type PreviewConsoleAccess,
+} from "../agent-cli";
+import { ddbPlugin } from "../agent-cli/plugins/ddb";
+import { sandboxPlugin } from "../agent-cli/plugins/sandbox";
 
 const planStepSchema = z.object({
   id: z.string(),
@@ -145,7 +148,8 @@ Bias: plan first, then implement with clean, cohesive, loosely-coupled code. Pre
 - Paths: \`@/\` → \`src/\`. Prefer \`@/...\` imports. Never use filesystem-absolute paths.
 - Import extensions: match existing style — local/alias imports usually include \`.ts\` / \`.tsx\` (see tsconfig allowImportingTsExtensions). Mirror neighbors; do not drop extensions inconsistently.
 - NOT Next.js / Remix / Expo: no \`next/*\`, no App Router, no RSC (\`"use client"\` unnecessary), no server actions, no \`process.env\` for secrets.
-- Routing: entry already wraps with HashRouter. Use \`react-router-dom\` routes under hash. NEVER BrowserRouter / createBrowserRouter (Preview path is \`/__preview__/...\`).
+- Routing: Preview injects \`window.__PREVIEW_BASENAME__\` (\`/__preview__/{session}\`). Default entry uses \`BrowserRouter basename={window.__PREVIEW_BASENAME__ ?? ""}\` so \`<Link to="/path">\` / \`<Route path="/path">\` work and refresh stays in Preview (SW SPA fallback). If the project already uses HashRouter, keep it. Never use BrowserRouter / createBrowserRouter without that basename (absolute \`/path\` would leave Preview scope).
+- Link + Button: \`<Button asChild><Link to="/path">Label</Link></Button>\` — never wrap \`<Button>\` inside \`<Link>\`.
 - Three.js / R3F (React 19): use \`@react-three/fiber@^9\` + \`@react-three/drei@^10\` (+ \`three\`). NEVER fiber@8 / drei@9 — they target React 18 and crash with \`ReactCurrentBatchConfig\` via esm.sh.
 
 ## Architecture & clean code (high cohesion / low coupling)
@@ -179,18 +183,20 @@ Bias: plan first, then implement with clean, cohesive, loosely-coupled code. Pre
   - DOM: \`(e: React.ChangeEvent<HTMLInputElement>) =>\`, \`(e: React.FormEvent<HTMLFormElement>) =>\`
   - Arrays: type the array or annotate \`(row: Student) =>\`
 - Prefer named types / interfaces for form state and list rows; avoid \`any\` and untyped destructuring.
-- After editing \`.ts\` / \`.tsx\`, call the \`typecheck\` tool and fix errors (esp. TS7006) before finishing.
+- After editing \`.ts\` / \`.tsx\`, call \`cli_execute\` \`sandbox.typecheck\` and fix errors (esp. TS7006) before finishing.
 
-## Sandbox / edits
-- Mutate files ONLY via Sandbox tools. \`index.html\` and \`package.json\` cannot be deleted.
-- Keep changes minimal and coherent with the existing design.
-- Explore progressively: grep for keywords → when a hit looks right, readFile with around=line (expand radius as needed) → only then full-file read if you must edit broadly.
-- Before writing UI, readFile the target page and any \`src/components/ui/*\` you will import.
+## Sandbox / edits (Agent CLI)
+- Mutate files ONLY via \`cli_execute\` sandbox.* commands. \`index.html\` and \`package.json\` cannot be deleted.
+- Preferred call shape: \`{ command: "sandbox.replaceInFile", arguments: { path, oldString, newString } }\`. Flattened top-level fields are also accepted.
+- Prefer \`sandbox.replaceInFile\` for single-file edits. Use \`sandbox.applyOperations\` only for multi-file atomic batches; each op.type must be \`write\`| \`add\`| \`remove\`| \`replace\` (not writeFile/replaceInFile).
+- Explore progressively: sandbox.grep → sandbox.readFile(around=line) → only then full-file read if you must edit broadly.
+- Before writing UI, sandbox.readFile the target page and any \`src/components/ui/*\` you will import.
 - After edits, briefly confirm what changed (Chinese summary).
+- Do not guess command names — \`cli_search\` / \`cli_describe\` when unsure; on failure use \`cli_diagnose\`.
 
-## Persistence / Dynamic DB
-- Schema, seed, or admin CRUD: loadSkill("dynamic-db") then use the dynamicDb tool (projectId is auto-bound).
-- Flow: setupSchema → dynamicDb codegen → readFile src/ddb/generated/index.ts (kindNames) → app code uses getDb() from src/lib/db.ts only.
+## Persistence / Dynamic DB (Agent CLI)
+- Schema, seed, or admin CRUD: loadSkill("dynamic-db"), then \`cli_execute\` ddb.* (projectId is auto-bound).
+- Flow: cli_execute ddb.setupSchema → cli_execute ddb.codegen → cli_execute sandbox.readFile src/ddb/generated/index.ts (kindNames) → app code uses getDb() from src/lib/db.ts only.
 - Never curl/fetch Dynamic DB HTTP or hand-write a second DB client.
 ${buildSkillsPromptSection()}`;
 
@@ -256,6 +262,32 @@ export function formatAgentError(error: unknown): string {
   return String(error);
 }
 
+const META_TOOL_TITLES: Record<string, string> = {
+  cli_search: "搜索命令",
+  cli_describe: "查看命令说明",
+  cli_diagnose: "诊断失败",
+  cli_execute: "执行命令",
+  loadSkill: "加载技能",
+};
+
+function cliExecuteArgs(input: unknown): Record<string, unknown> {
+  if (!input || typeof input !== "object") return {};
+  const values = input as Record<string, unknown>;
+  if (values.arguments && typeof values.arguments === "object") {
+    return values.arguments as Record<string, unknown>;
+  }
+  if (values.args && typeof values.args === "object") {
+    return values.args as Record<string, unknown>;
+  }
+  // Flattened form: path/content/… sit on the top level.
+  const flat: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(values)) {
+    if (key === "command" || key === "arguments" || key === "args") continue;
+    flat[key] = value;
+  }
+  return flat;
+}
+
 function toolDetail(input: unknown): string | undefined {
   if (!input || typeof input !== "object") return undefined;
   const values = input as Record<string, unknown>;
@@ -272,19 +304,67 @@ function toolDetail(input: unknown): string | undefined {
     return values.path;
   }
   if (typeof values.query === "string") return values.query.slice(0, 80);
+  if (typeof values.command === "string") {
+    const args = cliExecuteArgs(input);
+    if (typeof args.path === "string") {
+      if (typeof args.around === "number") {
+        const radius = typeof args.radius === "number" ? args.radius : 40;
+        return `${args.path}:${args.around}±${radius}`;
+      }
+      if (typeof args.startLine === "number") {
+        const end =
+          typeof args.endLine === "number" ? `-${args.endLine}` : "+";
+        return `${args.path}:${args.startLine}${end}`;
+      }
+      return args.path;
+    }
+    if (typeof args.query === "string") return String(args.query).slice(0, 60);
+    if (typeof args.kind === "string") return args.kind;
+    if (Array.isArray(args.operations)) return `${args.operations.length} 项操作`;
+    return undefined;
+  }
   if (Array.isArray(values.operations)) return `${values.operations.length} 项操作`;
   if (typeof values.operation === "string") {
     const kind = typeof values.kind === "string" ? ` ${values.kind}` : "";
     return `${values.operation}${kind}`;
   }
   if (typeof values.name === "string") return values.name;
+  if (typeof values.executionId === "string") return values.executionId;
   return undefined;
 }
 
-const FILE_BODY_TOOL_NAMES = new Set(["writeFile", "addFile", "replaceInFile"]);
+function resolveToolTitle(
+  toolName: string,
+  input: unknown,
+  resolveCommandTitle: (command: string) => string | undefined,
+): string {
+  if (toolName === "cli_execute") {
+    const command =
+      input && typeof input === "object" && typeof (input as { command?: unknown }).command === "string"
+        ? (input as { command: string }).command.trim()
+        : "";
+    if (command) {
+      return resolveCommandTitle(command) ?? command;
+    }
+  }
+  return META_TOOL_TITLES[toolName] ?? toolName;
+}
 
-function isFileBodyTool(name: string): boolean {
-  return FILE_BODY_TOOL_NAMES.has(name);
+const FILE_BODY_CLI_COMMANDS = new Set([
+  "sandbox.writeFile",
+  "sandbox.addFile",
+  "sandbox.replaceInFile",
+]);
+
+function isFileBodyCliExecute(input: unknown): boolean {
+  if (!input || typeof input !== "object") return false;
+  const command = (input as { command?: unknown }).command;
+  return typeof command === "string" && FILE_BODY_CLI_COMMANDS.has(command);
+}
+
+function isFileBodyTool(name: string, input?: unknown): boolean {
+  if (name === "cli_execute") return isFileBodyCliExecute(input);
+  return false;
 }
 
 /** Decode a JSON string value starting at `start` (first char after opening quote). */
@@ -332,7 +412,6 @@ function extractJsonStringField(raw: string, field: string): string | undefined 
 /** Pull path + body from partial tool-call JSON (write content / replace newString). */
 function extractStreamingFileFields(raw: string): { path?: string; content?: string } {
   const path = extractJsonStringField(raw, "path");
-  // Prefer the payload being authored: newString (edit) > content (write) > oldString (still streaming).
   const content =
     extractJsonStringField(raw, "newString") ??
     extractJsonStringField(raw, "content") ??
@@ -341,20 +420,34 @@ function extractStreamingFileFields(raw: string): { path?: string; content?: str
 }
 
 function fileBodyToolPreview(name: string, input: unknown): { detail?: string; content?: string } {
-  if (!isFileBodyTool(name) || !input || typeof input !== "object") {
-    return { detail: toolDetail(input) };
+  if (name === "cli_execute" && isFileBodyCliExecute(input) && input && typeof input === "object") {
+    const args = cliExecuteArgs(input);
+    const content =
+      typeof args.newString === "string"
+        ? args.newString
+        : typeof args.content === "string"
+          ? args.content
+          : undefined;
+    return {
+      detail: typeof args.path === "string" ? args.path : toolDetail(input),
+      content,
+    };
   }
-  const values = input as Record<string, unknown>;
-  const content =
-    typeof values.newString === "string"
-      ? values.newString
-      : typeof values.content === "string"
-        ? values.content
-        : undefined;
-  return {
-    detail: typeof values.path === "string" ? values.path : toolDetail(input),
-    content,
-  };
+  return { detail: toolDetail(input) };
+}
+
+function formatToolFailure(output: unknown): string | undefined {
+  if (!output || typeof output !== "object") return undefined;
+  const values = output as Record<string, unknown>;
+  if (values.ok !== false) return undefined;
+  if (typeof values.error === "string") return values.error;
+  if (values.error && typeof values.error === "object") {
+    const err = values.error as { message?: unknown; code?: unknown };
+    if (typeof err.message === "string") {
+      return typeof err.code === "string" ? `${err.code}: ${err.message}` : err.message;
+    }
+  }
+  return "工具执行失败";
 }
 
 export async function runPlanExecutorAgent(
@@ -430,7 +523,7 @@ Planning discipline:
 4. Order by dependency: types/lib → data/schema → components → pages/wiring → verify (typecheck / preview).
 5. Prefer extending existing modules over new parallel folders. Flag when a god file should be split — only if needed for this request.
 6. Keep the plan minimal: omit unrelated polish, renames, and speculative abstractions.
-7. Plan only against the Stack above (React 19 + TS + shadcn ui + Tailwind v4 + HashRouter) — never Next.js or other kits.
+7. Plan only against the Stack above (React 19 + TS + shadcn ui + Tailwind v4 + BrowserRouter) — never Next.js or other kits.
 8. If preview console errors are provided and the user wants fixes (or errors block the request), prioritize them. The executor can re-check with getPreviewErrors after edits.`,
     prompt: `User request:\n${prompt}${historyBlock}${previewErrorBlock}\n\nProject context:\n${projectContext(sandbox)}`,
   });
@@ -451,41 +544,47 @@ Planning discipline:
   const previewConsole: PreviewConsoleAccess = options.previewConsole ?? {
     getErrors: () => options.previewErrors ?? [],
   };
+  const agentCli = createAgentCliRuntime({
+    plugins: [sandboxPlugin, ddbPlugin],
+    context: { sandbox, previewConsole },
+    signal: options.abortSignal,
+  });
   const tools = {
-    ...createSandboxTools(sandbox),
     ...createSkillTools(),
-    ...createDdbTools(sandbox),
-    ...createTypecheckTools(sandbox),
-    ...createPreviewTools(previewConsole),
+    ...createAgentCliTools(agentCli),
   };
+  const commandTitle = (command: string) =>
+    agentCli.registry.get(command)?.metadata.title;
+  const toolTitle = (toolName: string, input?: unknown) =>
+    resolveToolTitle(toolName, input, commandTitle);
   const threshold = compactThreshold(settings.contextWindow);
   const executor = new ToolLoopAgent({
     model,
     instructions: `${RUNTIME_RULES}
 
-You are the Executor. Follow the plan; implement with clean, cohesive code. Use Sandbox tools (and dynamicDb / loadSkill / typecheck / getPreviewErrors when needed).
+You are the Executor. Follow the plan; implement with clean, cohesive code. File/DB/verify ops go through cli_* (sandbox.* / ddb.*). Use loadSkill for playbooks.
 
 Implementation style:
 - Honor \`approach\` and step boundaries: do not dump unrelated logic into one file.
 - Pages thin; extract reusable UI into components; keep pure helpers in src/lib.
-- Surgical diffs: replaceInFile for local edits; writeFile/addFile only for new files or intentional full rewrites.
+- Surgical diffs: cli_execute sandbox.replaceInFile for local edits; sandbox.writeFile/addFile only for new files or intentional full rewrites.
 - Match neighboring style (imports, naming, component patterns). No drive-by refactors outside the plan.
 - If the plan is wrong given what you read, adapt minimally and note the deviation in the final summary — do not balloon scope.
 
 Workflow:
 1. Progressive search before writing (do not dump whole files first):
-   a. Orient: listFiles or grep outputMode=files with a keyword / symbol / glob.
-   b. Pin: grep content (context=2) on promising paths — prefer word=true for identifiers; fuzzy=true if spelling unsure; regex=true for precise patterns.
-   c. Expand: for each relevant hit, readFile(path, around=hit.line, radius=30–60). If still incomplete, widen radius or startLine/endLine; follow imports/symbols with another grep.
-   d. Commit context: only full-file readFile when the file is small or you need the whole module to rewrite.
-   e. Windowed reads return \`LINE|…\` prefixes — strip them before replaceInFile oldString/newString.
+   a. Orient: cli_execute sandbox.listFiles or sandbox.grep outputMode=files with a keyword / symbol / glob.
+   b. Pin: sandbox.grep content (context=2) on promising paths — prefer word=true for identifiers; fuzzy=true if spelling unsure; regex=true for precise patterns.
+   c. Expand: for each relevant hit, sandbox.readFile(path, around=hit.line, radius=30–60). If still incomplete, widen radius or startLine/endLine; follow imports/symbols with another grep.
+   d. Commit context: only full-file sandbox.readFile when the file is small or you need the whole module to rewrite.
+   e. Windowed reads return \`LINE|…\` prefixes — strip them before sandbox.replaceInFile oldString/newString.
    f. Before importing a UI primitive, confirm it is in the available components list (or add it under src/components/ui/).
-2. Prefer replaceInFile for surgical edits; writeFile/addFile for new or full rewrites.
-3. Use applyOperations for multi-file atomic batches that must succeed together.
-4. Match existing import style (@/… with .tsx extensions, cn(), lucide-react, HashRouter). Annotate callback params under strict TS.
-5. Persistence: loadSkill dynamic-db → dynamicDb setupSchema → dynamicDb codegen → getDb() in app code.
-6. After .ts/.tsx edits: call typecheck. If ok=false, fix diagnostics (especially TS7006 implicit any) and typecheck again before finishing.
-7. After UI/runtime-affecting edits (or when preview console errors were in the prompt): call getPreviewErrors(wait=true). If ok=false, fix those lines and re-check before finishing.
+2. Prefer sandbox.replaceInFile for surgical edits; sandbox.writeFile/addFile for new or full rewrites.
+3. Use sandbox.applyOperations for multi-file atomic batches that must succeed together.
+4. Match existing import style (@/… with .tsx extensions, cn(), lucide-react, BrowserRouter). Annotate callback params under strict TS.
+5. Persistence: loadSkill dynamic-db → cli_execute ddb.setupSchema → cli_execute ddb.codegen → getDb() in app code. Use cli_search/cli_describe when unsure; cli_diagnose on failures.
+6. After .ts/.tsx edits: cli_execute sandbox.typecheck. If ok=false, fix diagnostics (especially TS7006 implicit any) and typecheck again before finishing.
+7. After UI/runtime-affecting edits (or when preview console errors were in the prompt): cli_execute sandbox.getPreviewErrors with wait=true. If ok=false, fix those lines and re-check before finishing.
 8. When done, reply with a short Chinese summary: what changed, module split if any, and any plan deviations.`,
     tools,
     stopWhen: isStepCount(40),
@@ -506,6 +605,7 @@ Workflow:
         tool: {
           id: toolCall.toolCallId,
           name: toolCall.toolName,
+          title: toolTitle(toolCall.toolName, toolCall.input),
           detail: preview.detail,
           status: "running",
           inputStreaming: false,
@@ -518,17 +618,14 @@ Workflow:
       if (toolOutput.type === "tool-error") {
         error = formatAgentError(toolOutput.error);
       } else {
-        const output = toolOutput.output;
-        if (output && typeof output === "object" && "ok" in output && output.ok === false) {
-          const message = "error" in output ? output.error : "工具执行失败";
-          error = typeof message === "string" ? message : String(message);
-        }
+        error = formatToolFailure(toolOutput.output);
       }
       options.onProgress?.({
         type: "tool",
         tool: {
           id: toolCall.toolCallId,
           name: toolCall.toolName,
+          title: toolTitle(toolCall.toolName, toolCall.input),
           detail: toolDetail(toolCall.input),
           status: error ? "error" : "completed",
           durationMs: toolExecutionMs,
@@ -565,19 +662,35 @@ Workflow:
   let toolInputFlush: ReturnType<typeof setTimeout> | undefined;
   const dirtyToolInputs = new Set<string>();
 
+  const streamingToolTitle = (toolName: string, raw: string) => {
+    if (toolName === "cli_execute") {
+      const command = extractJsonStringField(raw, "command");
+      if (command) return commandTitle(command) ?? command;
+    }
+    return META_TOOL_TITLES[toolName] ?? toolName;
+  };
+
   const flushToolInputPreviews = () => {
     toolInputFlush = undefined;
     for (const id of dirtyToolInputs) {
       const entry = streamingToolArgs.get(id);
       if (!entry) continue;
-      const preview = isFileBodyTool(entry.name)
+      const preview = isFileBodyTool(entry.name, undefined)
         ? extractStreamingFileFields(entry.raw)
-        : { path: extractJsonStringField(entry.raw, "path") ?? extractJsonStringField(entry.raw, "query") };
+        : entry.name === "cli_execute" &&
+            /sandbox\.(writeFile|addFile|replaceInFile)/.test(entry.raw)
+          ? extractStreamingFileFields(entry.raw)
+          : {
+              path:
+                extractJsonStringField(entry.raw, "path") ??
+                extractJsonStringField(entry.raw, "query"),
+            };
       options.onProgress?.({
         type: "tool",
         tool: {
           id,
           name: entry.name,
+          title: streamingToolTitle(entry.name, entry.raw),
           detail: preview.path,
           status: "running",
           inputStreaming: true,
@@ -635,12 +748,17 @@ Workflow:
         if (ended) {
           const preview = isFileBodyTool(ended.name)
             ? extractStreamingFileFields(ended.raw)
-            : { path: extractJsonStringField(ended.raw, "path") };
+            : {
+                path:
+                  extractJsonStringField(ended.raw, "path") ??
+                  extractJsonStringField(ended.raw, "query"),
+              };
           options.onProgress?.({
             type: "tool",
             tool: {
               id: part.id,
               name: ended.name,
+              title: streamingToolTitle(ended.name, ended.raw),
               detail: preview.path,
               status: "running",
               inputStreaming: false,

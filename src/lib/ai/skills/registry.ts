@@ -7,7 +7,7 @@ const SKILLS: AiSkill[] = [
   {
     name: "dynamic-db",
     description:
-      "Dynamic DB：schema/seed 用 dynamicDb 工具；业务 CRUD 用 getDb()；setupSchema → codegen → kindNames",
+      "Dynamic DB：schema/seed 用 cli_execute ddb.*；业务 CRUD 用 getDb()；setupSchema → codegen → kindNames",
     body: dynamicDbSkill,
   },
 ];

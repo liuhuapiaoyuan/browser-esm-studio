@@ -52,10 +52,10 @@ await new Promise((resolve, reject) => {
   });
 });
 
-async function request(path) {
+async function request(path, init = {}) {
   let responsePromise;
   fetchHandler({
-    request: new Request(`http://localhost:5173${path}`),
+    request: new Request(`http://localhost:5173${path}`, init),
     respondWith: (promise) => { responsePromise = promise; },
   });
   assert.ok(responsePromise, `request should be intercepted: ${path}`);
@@ -72,6 +72,32 @@ assert.match(htmlSource, /https:\/\/esm\.sh\/react-dom@19\.1\.0\?dev&target=es20
 assert.match(htmlSource, /lucide-react@0\.468\.0\?dev&target=es2022&deps=react@19\.1\.0,react-dom@19\.1\.0/);
 assert.doesNotMatch(htmlSource, /typescript@/);
 assert.match(htmlSource, /browser-esm-preview/);
+assert.match(htmlSource, /__PREVIEW_BASENAME__/);
+assert.match(htmlSource, /unhandledrejection/);
+assert.match(htmlSource, /window\.onerror/);
+assert.match(htmlSource, /addEventListener\("error"/);
+
+// SPA fallback: client route refresh serves index.html (BrowserRouter deep link)
+const spaNav = await request("/__preview__/test/gomoku", {
+  headers: { Accept: "text/html" },
+});
+assert.equal(spaNav.status, 200);
+const spaSource = await spaNav.text();
+assert.match(spaSource, /type="importmap"/);
+assert.match(spaSource, /browser-esm-preview/);
+assert.match(spaSource, /__PREVIEW_BASENAME__/);
+
+// Missing asset with extension still 404s (do not SPA-fallback .js/.css)
+const missingAsset = await request("/__preview__/test/missing-file.js", {
+  headers: { Accept: "text/html" },
+});
+assert.equal(missingAsset.status, 404);
+
+// Extensionless module fetch (not a document) still 404s — avoid returning HTML as JS
+const missingModule = await request("/__preview__/test/no-such-route", {
+  headers: { Accept: "*/*" },
+});
+assert.equal(missingModule.status, 404);
 
 // Custom React renderers: skip esm.sh ?dev (broken named exports on react-reconciler/constants).
 const fiberFiles = {

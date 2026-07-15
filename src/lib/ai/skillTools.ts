@@ -6,7 +6,7 @@ export function createSkillTools() {
   return {
     loadSkill: tool({
       description:
-        "Load a skill playbook by name (e.g. dynamic-db). Call before deep Dynamic DB / persistence work.",
+        "Load a skill playbook by name (e.g. dynamic-db). Call before deep Dynamic DB / persistence work (then use cli_* + ddb.*).",
       inputSchema: z.object({
         name: z.string().describe("Skill name, e.g. dynamic-db"),
       }),

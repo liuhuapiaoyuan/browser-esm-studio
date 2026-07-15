@@ -120,15 +120,23 @@ export default defineConfig({
 }`,
   "src/main.tsx": `import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { HashRouter } from "react-router-dom";
+import { BrowserRouter } from "react-router-dom";
 import { App } from "@/App.tsx";
 import "@/index.css";
 
+declare global {
+  interface Window {
+    __PREVIEW_BASENAME__?: string;
+  }
+}
+
+const basename = window.__PREVIEW_BASENAME__ ?? "";
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <HashRouter>
+    <BrowserRouter basename={basename}>
       <App />
-    </HashRouter>
+    </BrowserRouter>
   </StrictMode>,
 );
 `,
@@ -1044,7 +1052,7 @@ export function App() {
             </div>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Box className="size-4" />
-              components/ui · HashRouter · esm.sh
+              components/ui · BrowserRouter · esm.sh
             </div>
           </CardContent>
         </Card>

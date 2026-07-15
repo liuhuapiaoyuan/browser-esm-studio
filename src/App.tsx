@@ -6,6 +6,7 @@ import { requestAgentNotifyPermission, runAgentHooks } from "./lib/ai/hooks";
 import { COMPACT_RATIO, compactThreshold, isAiConfigured, loadAiSettings, saveAiSettings, type AiSettings } from "./lib/ai/settings";
 import { buildFileTree, fileLanguage, normalizePath, type TreeNode } from "./lib/path";
 import { previewUrl, syncPreviewProject } from "./lib/preview";
+import { createPreviewConsole } from "./lib/preview-console";
 import { createSandbox, SandboxError, type Sandbox } from "./lib/sandbox";
 import {
   ensureDdbProject,
@@ -193,7 +194,7 @@ function statusLabel(progress: AgentProgress | null, configured: boolean): strin
     case "reasoning-end":
       return "思考完成，准备下一步…";
     case "tool":
-      return `工具 ${progress.tool.name}${progress.tool.detail ? ` · ${progress.tool.detail}` : ""}`;
+      return `工具 ${progress.tool.title || progress.tool.name}${progress.tool.detail ? ` · ${progress.tool.detail}` : ""}`;
     case "text-delta":
       return "流式输出中…";
     case "done":
@@ -826,6 +827,10 @@ export function App() {
   if (!sandboxRef.current) sandboxRef.current = createSandbox(loadFiles());
   const sandbox = sandboxRef.current;
 
+  const previewConsoleRef = useRef<ReturnType<typeof createPreviewConsole> | null>(null);
+  if (!previewConsoleRef.current) previewConsoleRef.current = createPreviewConsole();
+  const previewConsole = previewConsoleRef.current;
+
   const [files, setFiles] = useState<FileMap>(() => sandbox.snapshot);
   const [activeFile, setActiveFile] = useState("src/App.tsx");
   const [mode, setMode] = useState<WorkspaceMode>("preview");
@@ -839,6 +844,8 @@ export function App() {
   const agentSubmitRef = useRef<((text: string) => void) | null>(null);
 
   useEffect(() => sandbox.subscribe(setFiles), [sandbox]);
+
+  useEffect(() => previewConsole.subscribe(() => setLogs(previewConsole.getLogs())), [previewConsole]);
 
   useEffect(() => {
     requestAgentNotifyPermission();
@@ -859,67 +866,50 @@ export function App() {
         if (cancelled) return;
         const message = error instanceof Error ? error.message : String(error);
         console.warn("[ddb] ensure failed:", message);
-        setLogs((current) => [
-          ...current.slice(-99),
-          {
-            level: "warn",
-            message: `Dynamic DB 初始化失败: ${message}`,
-            time: new Date().toLocaleTimeString(),
-          },
-        ]);
+        previewConsole.push("warn", `Dynamic DB 初始化失败: ${message}`);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [sandbox]);
+  }, [sandbox, previewConsole]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(files));
     setRuntimeStatus("syncing");
+    previewConsole.markDirty();
     const timer = window.setTimeout(() => {
+      const syncToken = previewConsole.beginSync();
       syncPreviewProject(SESSION_ID, files)
         .then(() => {
-          setLogs([]);
+          if (!previewConsole.endSync(syncToken)) return;
           setRuntimeStatus("ready");
           setRevision((value) => value + 1);
         })
         .catch((error: unknown) => {
+          if (!previewConsole.failSync(syncToken)) return;
           setRuntimeStatus("error");
           setShowConsole(true);
           const message = error instanceof Error ? error.message : String(error);
-          setLogs((current) => [...current, { level: "error", message, time: new Date().toLocaleTimeString() }]);
+          previewConsole.push("error", message);
         });
     }, 320);
     return () => window.clearTimeout(timer);
-  }, [files]);
-
-  const logsRef = useRef(logs);
-  logsRef.current = logs;
+  }, [files, previewConsole]);
 
   useEffect(() => {
     function handlePreviewMessage(event: MessageEvent<PreviewMessage>) {
       if (event.data?.source !== "browser-esm-preview") return;
-      const now = new Date().toLocaleTimeString();
       if (event.data.type === "ready") setRuntimeStatus("ready");
-      if (event.data.type === "error") {
+      if (event.data.type === "error" || (event.data.type === "console" && event.data.payload?.level === "error")) {
         setRuntimeStatus("error");
         setShowConsole(true);
-        const message = event.data.payload?.stack || event.data.payload?.message || "Unknown error";
-        setLogs((current) => [...current.slice(-99), { level: "error", message, time: now }]);
       }
-      if (event.data.type === "console") {
-        const payload = event.data.payload;
-        if (payload.level === "error") {
-          setRuntimeStatus("error");
-          setShowConsole(true);
-        }
-        setLogs((current) => [...current.slice(-99), { level: payload.level, message: payload.args.join(" "), time: now }]);
-      }
+      previewConsole.handleMessage(event.data);
     }
     window.addEventListener("message", handlePreviewMessage);
     return () => window.removeEventListener("message", handlePreviewMessage);
-  }, []);
+  }, [previewConsole]);
 
   function updateFile(source: string) {
     sandbox.write(activeFile, source);
@@ -960,16 +950,18 @@ export function App() {
   }
 
   const manualReload = () => {
-    setLogs([]);
     setRuntimeStatus("syncing");
+    const syncToken = previewConsole.beginSync();
     syncPreviewProject(SESSION_ID, files).then(() => {
+      if (!previewConsole.endSync(syncToken)) return;
       setRevision((value) => value + 1);
       setRuntimeStatus("ready");
     }).catch((error: unknown) => {
+      if (!previewConsole.failSync(syncToken)) return;
       setRuntimeStatus("error");
       setShowConsole(true);
       const message = error instanceof Error ? error.message : String(error);
-      setLogs((current) => [...current, { level: "error", message, time: new Date().toLocaleTimeString() }]);
+      previewConsole.push("error", message);
     });
   };
 
@@ -978,40 +970,27 @@ export function App() {
     setTypechecking(true);
     setShowConsole(true);
     setMode("preview");
-    const now = () => new Date().toLocaleTimeString();
-    setLogs((current) => [...current, { level: "info", message: "正在运行 TypeScript 检查（tsc --noEmit）…", time: now() }]);
+    previewConsole.push("info", "正在运行 TypeScript 检查（tsc --noEmit）…");
     try {
       const result = await typecheckProject(files);
       const lines = formatTypecheckDiagnostics(result);
       if (result.ok) {
-        setLogs((current) => [
-          ...current,
-          {
-            level: "info",
-            message: `类型检查通过（${result.checkedFiles} 个文件，${result.diagnostics.length} 条提示）。`,
-            time: now(),
-          },
-        ]);
+        previewConsole.push(
+          "info",
+          `类型检查通过（${result.checkedFiles} 个文件，${result.diagnostics.length} 条提示）。`,
+        );
       } else {
-        setLogs((current) => [
-          ...current,
-          {
-            level: "error",
-            message: `类型检查失败：${result.diagnostics.filter((item) => item.category === "error").length} 个错误。`,
-            time: now(),
-          },
-          ...lines.map((message) => ({ level: "error" as const, message, time: now() })),
-        ]);
+        previewConsole.push(
+          "error",
+          `类型检查失败：${result.diagnostics.filter((item) => item.category === "error").length} 个错误。`,
+        );
+        for (const message of lines) previewConsole.push("error", message);
       }
     } catch (error) {
-      setLogs((current) => [
-        ...current,
-        {
-          level: "error",
-          message: `类型检查异常：${error instanceof Error ? error.message : String(error)}`,
-          time: now(),
-        },
-      ]);
+      previewConsole.push(
+        "error",
+        `类型检查异常：${error instanceof Error ? error.message : String(error)}`,
+      );
     } finally {
       setTypechecking(false);
     }
@@ -1023,24 +1002,8 @@ export function App() {
         sandbox={sandbox}
         getFiles={() => files}
         submitRef={agentSubmitRef}
-        getPreviewErrors={() =>
-          logsRef.current
-            .filter((log) => log.level === "error" || log.level === "warn")
-            .map((log) => log.message)
-        }
-        waitForPreviewErrors={(settleMs = 1800) =>
-          new Promise((resolve) => {
-            window.setTimeout(
-              () =>
-                resolve(
-                  logsRef.current
-                    .filter((log) => log.level === "error" || log.level === "warn")
-                    .map((log) => log.message),
-                ),
-              settleMs,
-            );
-          })
-        }
+        getPreviewErrors={() => previewConsole.getErrors()}
+        waitForPreviewErrors={(settleMs = 1800) => previewConsole.waitForErrors(settleMs)}
       />
       <main className="workspace">
         <header className="workspace-header">
@@ -1057,12 +1020,12 @@ export function App() {
           </div>
         </header>
         <div className="workspace-body">
-          {mode === "code" ? (
-            <div className="code-workspace">
-              <FileExplorer files={files} activeFile={activeFile} onSelect={setActiveFile} onAdd={addFile} onDelete={deleteFile} />
-              <CodeEditor path={activeFile} value={files[activeFile] || ""} onChange={updateFile} />
-            </div>
-          ) : (
+          {/* Keep Preview iframe mounted in code mode so runtime console errors still arrive. */}
+          <div className={`code-workspace ${mode === "code" ? "" : "is-hidden"}`}>
+            <FileExplorer files={files} activeFile={activeFile} onSelect={setActiveFile} onAdd={addFile} onDelete={deleteFile} />
+            <CodeEditor path={activeFile} value={files[activeFile] || ""} onChange={updateFile} />
+          </div>
+          <div className={`preview-host ${mode === "preview" ? "" : "is-hidden"}`}>
             <PreviewPane
               sessionId={SESSION_ID}
               revision={revision}
@@ -1074,7 +1037,7 @@ export function App() {
               onOpen={() => window.open(previewUrl(SESSION_ID, revision), "_blank", "noopener,noreferrer")}
               showConsole={showConsole}
               onToggleConsole={() => setShowConsole((value) => !value)}
-              onClearLogs={() => setLogs([])}
+              onClearLogs={() => previewConsole.clear()}
               onFixError={(message) => {
                 agentSubmitRef.current?.(
                   `请修复 Preview 控制台报错，不要改无关文件：\n- ${message}`,
@@ -1088,7 +1051,7 @@ export function App() {
                 agentSubmitRef.current?.(formatElementPickPrompt(pick, instruction));
               }}
             />
-          )}
+          </div>
         </div>
       </main>
     </div>

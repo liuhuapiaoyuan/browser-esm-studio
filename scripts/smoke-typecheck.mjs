@@ -820,13 +820,18 @@ export function Icon() {
   assert.equal(result.ok, true, formatTypecheckDiagnostics(result).join("\n"));
 });
 
-await case_("react-router-dom ambient stub resolves HashRouter import", async () => {
+await case_("react-router-dom ambient stub resolves BrowserRouter import", async () => {
   const result = await typecheckProject(
     baseProject({
       "src/router.tsx": `
-import { HashRouter } from "react-router-dom";
+import { BrowserRouter } from "react-router-dom";
+declare global {
+  interface Window {
+    __PREVIEW_BASENAME__?: string;
+  }
+}
 export function Root() {
-  return <HashRouter>{null}</HashRouter>;
+  return <BrowserRouter basename={window.__PREVIEW_BASENAME__ ?? ""}>{null}</BrowserRouter>;
 }
 `,
     }),

@@ -38,8 +38,21 @@ self.addEventListener("message", (event) => {
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin || !url.pathname.startsWith(PREVIEW_PREFIX)) return;
-  event.respondWith(handlePreviewRequest(url));
+  event.respondWith(handlePreviewRequest(url, event.request));
 });
+
+/** Document navigations (refresh / open) to client routes need index.html. */
+function isDocumentRequest(request) {
+  if (!request) return false;
+  if (request.mode === "navigate") return true;
+  const accept = request.headers.get("accept") || "";
+  return accept.includes("text/html");
+}
+
+/** Paths without a file extension are treated as SPA routes (/gomoku, /users/1). */
+function isSpaRoutePath(path) {
+  return !path || !/\.[a-z0-9]+$/i.test(path);
+}
 
 function cleanPath(value) {
   const output = [];
@@ -376,22 +389,63 @@ function prepareTailwindCss(source) {
 function bridgeScript() {
   return `<script>
   (() => {
-    const send = (type, payload) => parent.postMessage({ source: "browser-esm-preview", type, payload }, "*");
-    const normalize = (value) => {
-      if (value instanceof Error) return value.stack || value.message;
-      if (typeof value === "string") return value;
-      try { return JSON.stringify(value); } catch { return String(value); }
+    // BrowserRouter basename so <Link to="/gomoku"> stays under /__preview__/{session}/
+    const previewBase = location.pathname.match(/^(\\/__preview__\\/[^/]+)/);
+    window.__PREVIEW_BASENAME__ = previewBase ? previewBase[1] : "";
+    const send = (type, payload) => {
+      try { parent.postMessage({ source: "browser-esm-preview", type, payload }, "*"); } catch (_) {}
     };
-    for (const level of ["log", "info", "warn", "error"]) {
-      const original = console[level].bind(console);
-      console[level] = (...args) => { original(...args); send("console", { level, args: args.map(normalize) }); };
+    const normalize = (value) => {
+      if (value instanceof Error) return value.stack || value.message || String(value);
+      if (typeof value === "string") return value;
+      if (typeof value === "undefined") return "undefined";
+      if (typeof value === "symbol") return value.toString();
+      if (value && typeof value === "object") {
+        if (typeof value.message === "string") return value.stack || value.message;
+        try { return JSON.stringify(value); } catch (_) { return Object.prototype.toString.call(value); }
+      }
+      try { return String(value); } catch (_) { return "[unserializable]"; }
+    };
+    const forwardError = (message, stack) => {
+      send("error", { message: message || "Unknown error", stack: stack || "" });
+    };
+    for (const level of ["log", "info", "warn", "error", "debug"]) {
+      const original = console[level] ? console[level].bind(console) : null;
+      console[level] = (...args) => {
+        try { original?.(...args); } catch (_) {}
+        const mapped = level === "debug" ? "log" : level;
+        send("console", { level: mapped, args: args.map(normalize) });
+      };
     }
-    addEventListener("error", (event) => send("error", {
-      message: event.error?.message || event.message || ("Script error" + (event.filename ? (" at " + event.filename) : "")),
-      stack: event.error?.stack || "",
-    }));
-    addEventListener("unhandledrejection", (event) => send("error", { message: normalize(event.reason), stack: event.reason?.stack || "" }));
-    addEventListener("DOMContentLoaded", () => send("ready", { title: document.title }));
+    // Capture phase so we still see errors stopped by other listeners / frameworks.
+    addEventListener("error", (event) => {
+      const msg = event.error?.message || event.message ||
+        (event.filename ? ("Resource/script error at " + event.filename) : "Script error");
+      const stack = event.error?.stack ||
+        (event.filename ? (event.filename + ":" + event.lineno + ":" + event.colno) : "");
+      forwardError(msg, stack);
+    }, true);
+    addEventListener("unhandledrejection", (event) => {
+      const reason = event.reason;
+      forwardError(normalize(reason), reason && reason.stack ? reason.stack : "");
+    }, true);
+    const prevOnError = window.onerror;
+    window.onerror = (message, source, lineno, colno, error) => {
+      forwardError(
+        (error && error.message) || String(message),
+        (error && error.stack) || (source ? (source + ":" + lineno + ":" + colno) : ""),
+      );
+      if (typeof prevOnError === "function") return prevOnError(message, source, lineno, colno, error);
+      return false;
+    };
+    const prevOnRejection = window.onunhandledrejection;
+    window.onunhandledrejection = (event) => {
+      forwardError(normalize(event.reason), event.reason && event.reason.stack ? event.reason.stack : "");
+      if (typeof prevOnRejection === "function") return prevOnRejection.call(window, event);
+    };
+    // Bridge installed — host can start the settle timer; DOM ready follows for title.
+    send("ready", { title: document.title, phase: "bridge" });
+    addEventListener("DOMContentLoaded", () => send("ready", { title: document.title, phase: "dom" }));
 
     // ponytail: iframe pick mode — host toggles via postMessage; no react-grab (no source maps in SW preview)
     let pickOn = false;
@@ -543,7 +597,14 @@ style.textContent = css;
 export default css;`;
 }
 
-async function handlePreviewRequest(url) {
+async function serveIndexHtml(sessionId) {
+  const index = await readSource(sessionId, "index.html");
+  if (!index) return null;
+  const source = await transformHtml(sessionId, index.source);
+  return new Response(source, { headers: responseHeaders("text/html; charset=utf-8") });
+}
+
+async function handlePreviewRequest(url, request) {
   const remainder = url.pathname.slice(PREVIEW_PREFIX.length);
   const slash = remainder.indexOf("/");
   const sessionId = slash === -1 ? remainder : remainder.slice(0, slash);
@@ -553,6 +614,11 @@ async function handlePreviewRequest(url) {
     const file = await readSource(sessionId, requestedPath);
 
     if (!file) {
+      // SPA fallback: /__preview__/{session}/gomoku → index.html (BrowserRouter refresh)
+      if (isSpaRoutePath(requestedPath) && isDocumentRequest(request)) {
+        const spa = await serveIndexHtml(sessionId);
+        if (spa) return spa;
+      }
       return new Response(`Virtual file not found: ${requestedPath}`, {
         status: 404,
         headers: responseHeaders("text/plain; charset=utf-8"),

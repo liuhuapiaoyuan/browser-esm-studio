@@ -255,6 +255,11 @@ const TOOL_LABELS: Record<string, string> = {
   replaceInFile: "编辑文件",
   typecheck: "类型检查",
   writeFile: "写入文件",
+  cli_search: "搜索命令",
+  cli_describe: "查看命令说明",
+  cli_diagnose: "诊断失败",
+  cli_execute: "执行命令",
+  loadSkill: "加载技能",
 };
 
 function formatDuration(durationMs?: number) {
@@ -262,8 +267,23 @@ function formatDuration(durationMs?: number) {
   return durationMs < 1000 ? `${Math.max(1, Math.round(durationMs))}ms` : `${(durationMs / 1000).toFixed(1)}s`;
 }
 
-const FILE_BODY_TOOLS = new Set(["writeFile", "addFile", "replaceInFile"]);
+const FILE_BODY_TOOLS = new Set([
+  "writeFile",
+  "addFile",
+  "replaceInFile",
+  "sandbox.writeFile",
+  "sandbox.addFile",
+  "sandbox.replaceInFile",
+]);
+const FILE_BODY_TITLES = new Set(["写入文件", "新增文件", "替换文件片段"]);
 const STREAM_CODE_MAX_LINES = 48;
+
+function isFileBodyActivity(tool: AgentToolActivity): boolean {
+  if (FILE_BODY_TOOLS.has(tool.name)) return true;
+  if (tool.title && FILE_BODY_TITLES.has(tool.title)) return true;
+  // cli_execute write/replace streams set content even while name stays cli_execute.
+  return typeof tool.content === "string";
+}
 
 /** Split so the caret sits on the growing last line while file args stream. */
 function StreamingFileContent({ content, streaming }: { content: string; streaming: boolean }) {
@@ -286,7 +306,7 @@ function StreamingFileContent({ content, streaming }: { content: string; streami
 }
 
 function ToolActivity({ tool }: { tool: AgentToolActivity }) {
-  const isFileBody = FILE_BODY_TOOLS.has(tool.name);
+  const isFileBody = isFileBodyActivity(tool);
   const streamingArgs = Boolean(tool.inputStreaming);
   const hasContent = typeof tool.content === "string";
   const showCode = isFileBody && (hasContent || streamingArgs) && (streamingArgs || tool.status === "running");
@@ -313,11 +333,15 @@ function ToolActivity({ tool }: { tool: AgentToolActivity }) {
     if (el) el.scrollTop = el.scrollHeight;
   }, [tool.content, showCode, tool.inputStreaming]);
 
-  const name = TOOL_LABELS[tool.name] || tool.name;
+  const name = tool.title || TOOL_LABELS[tool.name] || tool.name;
+  const isReplace =
+    tool.name === "replaceInFile" ||
+    tool.name === "sandbox.replaceInFile" ||
+    tool.title === "替换文件片段";
   const status =
     tool.inputStreaming
       ? isFileBody
-        ? tool.name === "replaceInFile"
+        ? isReplace
           ? "流式编辑中"
           : "流式写入中"
         : "参数生成中"
@@ -347,8 +371,8 @@ function ToolActivity({ tool }: { tool: AgentToolActivity }) {
               : tool.inputStreaming
                 ? <StreamingFileContent content="" streaming />
                 : tool.status === "running"
-                  ? "正在操作虚拟文件…"
-                  : `${tool.name} 已完成`}
+                  ? "正在操作…"
+                  : `${name} 已完成`}
         </div>
       )}
     </div>

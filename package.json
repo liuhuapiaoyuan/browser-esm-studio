@@ -10,11 +10,12 @@
     "build:runtime": "esbuild ./node_modules/sucrase/dist/index.js --bundle --format=iife --global-name=Sucrase --outfile=./public/sucrase.browser.js --minify --footer:js=\"globalThis.Sucrase=Sucrase;\"",
     "preview": "vite preview --host 0.0.0.0",
     "test:sandbox": "bun scripts/smoke-sandbox.mjs",
-    "test:preview": "bun scripts/smoke-preview.mjs",
+    "test:preview": "bun scripts/smoke-preview.mjs && bun scripts/smoke-preview-console.mjs",
     "test:typecheck": "bun scripts/smoke-typecheck.mjs",
     "test:agent-ui": "bun scripts/smoke-agent-ui.mjs",
     "test:ddb": "bun scripts/smoke-ddb.mjs",
-    "test": "bun run test:sandbox && bun run test:preview && bun run test:typecheck && bun run test:agent-ui && bun run test:ddb",
+    "test:agent-cli": "bun scripts/smoke-agent-cli.mjs",
+    "test": "bun run test:sandbox && bun run test:preview && bun run test:typecheck && bun run test:agent-ui && bun run test:ddb && bun run test:agent-cli",
     "postinstall": "bun run build:runtime"
   },
   "dependencies": {
