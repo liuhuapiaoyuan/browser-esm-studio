@@ -1,12 +1,13 @@
 import type { FileMap } from "./types";
+import { LOGO_DATA_URL } from "./defaultProjectLogoData";
 
 export const DEFAULT_FILES: FileMap = {
   "index.html": `<!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Orbit — AI workspace</title>
+    <title>思鹭</title>
   </head>
   <body>
     <div id="root"></div>
@@ -14,7 +15,7 @@ export const DEFAULT_FILES: FileMap = {
   </body>
 </html>`,
   "package.json": `{
-  "name": "orbit-preview-project",
+  "name": "silu-preview-project",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -168,25 +169,25 @@ createRoot(document.getElementById("root")!).render(
 }
 
 :root {
-  --radius: 0.625rem;
-  --background: oklch(0.985 0.002 106);
-  --foreground: oklch(0.21 0.006 106);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.21 0.006 106);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.21 0.006 106);
-  --primary: oklch(0.45 0.14 142);
-  --primary-foreground: oklch(0.98 0.02 142);
-  --secondary: oklch(0.95 0.01 106);
-  --secondary-foreground: oklch(0.28 0.01 106);
-  --muted: oklch(0.95 0.01 106);
-  --muted-foreground: oklch(0.52 0.01 106);
-  --accent: oklch(0.95 0.02 142);
-  --accent-foreground: oklch(0.28 0.05 142);
+  --radius: 0.75rem;
+  --background: oklch(0.97 0.02 155);
+  --foreground: oklch(0.28 0.05 155);
+  --card: oklch(0.995 0.005 155);
+  --card-foreground: oklch(0.28 0.05 155);
+  --popover: oklch(0.995 0.005 155);
+  --popover-foreground: oklch(0.28 0.05 155);
+  --primary: oklch(0.48 0.12 155);
+  --primary-foreground: oklch(0.98 0.01 155);
+  --secondary: oklch(0.94 0.03 155);
+  --secondary-foreground: oklch(0.32 0.06 155);
+  --muted: oklch(0.94 0.02 155);
+  --muted-foreground: oklch(0.5 0.04 155);
+  --accent: oklch(0.93 0.04 155);
+  --accent-foreground: oklch(0.32 0.07 155);
   --destructive: oklch(0.55 0.2 25);
-  --border: oklch(0.9 0.01 106);
-  --input: oklch(0.9 0.01 106);
-  --ring: oklch(0.45 0.14 142);
+  --border: oklch(0.88 0.03 155);
+  --input: oklch(0.88 0.03 155);
+  --ring: oklch(0.48 0.12 155);
 }
 
 * {
@@ -198,7 +199,7 @@ body {
   min-width: 320px;
   background: var(--background);
   color: var(--foreground);
-  font-family: "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
 }
 `,
   "src/lib/utils.ts": `import { clsx, type ClassValue } from "clsx";
@@ -960,126 +961,75 @@ export function TableCaption({ className, ...props }: React.ComponentProps<"capt
   return <caption className={cn("mt-4 text-sm text-muted-foreground", className)} {...props} />;
 }
 `,
+  "src/assets/logo.ts": `export const logoSrc = ${JSON.stringify(LOGO_DATA_URL)};
+`,
   "src/content.ts": `export const content = {
-  eyebrow: "AI PRODUCT STUDIO",
-  title: "Build at the speed of thought.",
-  description:
-    "From one prompt to a production-ready experience — designed with shadcn/ui, refined live, and ready to ship.",
-  primaryAction: "Start creating",
-  secondaryAction: "Explore projects",
+  badge: "AI 全栈创作",
+  title: "思鹭：构建你的应用",
+  description: "从一句描述开始，AI 为你规划、编码并实时呈现。",
+  features: ["实时预览", "智能改码", "一键导出"],
 } as const;
 `,
-  "src/App.tsx": `import { ArrowRight, Box, Layers3, Sparkles, WandSparkles } from "lucide-react";
+  "src/App.tsx": `import { Sparkles } from "lucide-react";
 import { content } from "@/content.ts";
+import { logoSrc } from "@/assets/logo.ts";
 import { Badge } from "@/components/ui/badge.tsx";
 import { Button } from "@/components/ui/button.tsx";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card.tsx";
-import { Separator } from "@/components/ui/separator.tsx";
-
-const features = [
-  {
-    icon: Sparkles,
-    title: "Prompt to product",
-    text: "Turn an idea into a polished interface with reusable shadcn components.",
-  },
-  {
-    icon: Layers3,
-    title: "Real source files",
-    text: "Every iteration stays visible, editable, and portable as a Vite project.",
-  },
-  {
-    icon: Box,
-    title: "Ship anywhere",
-    text: "Export the complete project and build with your own pipeline.",
-  },
-] as const;
 
 export function App() {
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_80%_12%,oklch(0.92_0.06_142/.35),transparent_28%),var(--background)]">
-      <header className="flex h-16 items-center justify-between border-b px-6 md:px-12">
-        <a className="flex items-center gap-2 font-semibold tracking-tight" href="#">
-          <span className="grid size-8 place-items-center rounded-lg bg-primary text-primary-foreground">
-            <Sparkles className="size-4" />
-          </span>
-          orbit
-        </a>
-        <nav className="flex items-center gap-3">
-          <Button variant="ghost" className="hidden sm:inline-flex" asChild>
-            <a href="#features">Product</a>
-          </Button>
-          <Button variant="outline" size="sm">
-            Open workspace
-          </Button>
-        </nav>
-      </header>
+    <div className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_78%_42%,oklch(0.92_0.05_155/.55),transparent_42%),radial-gradient(circle_at_12%_18%,oklch(0.94_0.04_155/.7),transparent_36%),var(--background)]">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute right-[8%] top-[18%] size-[28rem] rounded-full border border-primary/15 md:size-[34rem]"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute right-[14%] top-[26%] size-[18rem] rounded-full border border-primary/10 md:size-[22rem]"
+      />
 
-      <main className="mx-auto grid max-w-6xl gap-12 px-6 py-16 md:grid-cols-[1.1fr_0.9fr] md:px-12 md:py-24">
-        <section className="flex flex-col justify-center gap-6">
-          <Badge variant="secondary" className="w-fit gap-1.5">
-            <WandSparkles className="size-3.5" />
-            {content.eyebrow}
+      <main className="relative mx-auto grid min-h-screen max-w-6xl items-center gap-10 px-6 py-16 md:grid-cols-[1.05fr_0.95fr] md:gap-12 md:px-12 md:py-20">
+        <section className="flex flex-col gap-6">
+          <Badge variant="secondary" className="w-fit gap-1.5 rounded-full bg-card/90 px-3 py-1 text-primary shadow-sm">
+            <Sparkles className="size-3.5" />
+            {content.badge}
           </Badge>
-          <h1 className="text-4xl font-semibold tracking-tight md:text-6xl">{content.title}</h1>
-          <p className="max-w-xl text-lg text-muted-foreground">{content.description}</p>
-          <div className="flex flex-wrap gap-3">
-            <Button size="lg">
-              {content.primaryAction}
-              <ArrowRight />
-            </Button>
-            <Button size="lg" variant="secondary">
-              {content.secondaryAction}
-            </Button>
+
+          <h1 className="text-4xl font-bold tracking-tight text-foreground md:text-5xl lg:text-6xl">
+            {content.title}
+          </h1>
+
+          <p className="max-w-lg text-base text-muted-foreground md:text-lg">
+            {content.description}
+          </p>
+
+          <div className="flex flex-wrap gap-3 pt-1">
+            {content.features.map((label) => (
+              <Button
+                key={label}
+                variant="outline"
+                size="lg"
+                className="rounded-full border-border/80 bg-card/80 px-5 shadow-sm hover:bg-accent"
+              >
+                {label}
+              </Button>
+            ))}
           </div>
         </section>
 
-        <Card className="self-center overflow-hidden border-border/80 shadow-lg">
-          <CardHeader className="flex-row items-center justify-between space-y-0">
-            <div>
-              <CardTitle>Live project</CardTitle>
-              <CardDescription>shadcn · Tailwind · ESM preview</CardDescription>
-            </div>
-            <Badge>Ready</Badge>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid h-44 grid-cols-[72px_1fr] overflow-hidden rounded-lg border bg-muted/40">
-              <div className="border-r bg-muted" />
-              <div className="flex flex-col justify-center gap-3 p-6">
-                <div className="h-6 w-3/4 rounded bg-foreground/80" />
-                <div className="h-2 w-full rounded bg-muted-foreground/25" />
-                <div className="h-2 w-2/3 rounded bg-muted-foreground/25" />
-              </div>
-            </div>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Box className="size-4" />
-              components/ui · BrowserRouter · esm.sh
-            </div>
-          </CardContent>
-        </Card>
+        <div className="flex items-center justify-center md:justify-end">
+          <img
+            src={logoSrc}
+            alt="思鹭"
+            className="w-[min(100%,22rem)] drop-shadow-xl md:w-[min(100%,26rem)]"
+          />
+        </div>
       </main>
-
-      <Separator className="mx-6 md:mx-12" />
-
-      <section id="features" className="mx-auto grid max-w-6xl gap-4 px-6 py-12 md:grid-cols-3 md:px-12">
-        {features.map(({ icon: Icon, title, text }) => (
-          <Card key={title} className="border-transparent bg-transparent shadow-none">
-            <CardHeader className="flex-row gap-4 space-y-0">
-              <span className="grid size-10 place-items-center rounded-lg bg-accent text-accent-foreground">
-                <Icon className="size-5" />
-              </span>
-              <div>
-                <CardTitle className="text-base">{title}</CardTitle>
-                <CardDescription className="mt-1">{text}</CardDescription>
-              </div>
-            </CardHeader>
-          </Card>
-        ))}
-      </section>
     </div>
   );
 }
 `,
-  "README.md": `# Orbit preview project
+  "README.md": `# 思鹭预览项目
 
 This project was created in Browser ESM Studio with a shadcn/ui + Tailwind CSS v4 base.
 

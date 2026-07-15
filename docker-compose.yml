@@ -11,9 +11,13 @@ services:
     restart: unless-stopped
     ports:
       - "8080:80"
+    env_file:
+      - .env
     environment:
       # OpenAI-compatible API（浏览器 → /openai-proxy → 此处）
       AI_PROXY_TARGET: ${AI_PROXY_TARGET:-https://api.openai.com}
+      # nginx 注入 Authorization；建议放 .env，勿提交仓库
+      VITE_AI_API_KEY: ${VITE_AI_API_KEY:-}
 
       # Dynamic DB（浏览器 → /ddb → 此处，并注入身份头）
       DYNAMIC_DB_BASE_URL: ${DYNAMIC_DB_BASE_URL:-https://dynamic-db.b.nps.qzsyzn.com}

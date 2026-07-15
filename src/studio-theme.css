@@ -741,7 +741,7 @@ textarea:focus-visible {
   flex-direction: row;
   align-items: center;
   gap: 9px;
-  margin-left: auto;
+  margin-right: auto;
 }
 
 .project-mark {

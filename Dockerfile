@@ -30,11 +30,15 @@ ENV AI_PROXY_TARGET=https://api.openai.com \
     DDB_USER_ID=dev-user \
     DDB_ROLES=admin \
     LITE_IMAGE_PROXY_TARGET=https://api.siliconflow.cn
-# LITE_IMAGE_API_KEY — pass at runtime only: -e LITE_IMAGE_API_KEY=...
+# Runtime secrets — pass with -e / compose, do not bake into image:
+#   VITE_AI_API_KEY (or AI_API_KEY) → /openai-proxy Authorization
+#   LITE_IMAGE_API_KEY → /lite-image-proxy Authorization
 
 COPY docker/nginx.conf.template /etc/nginx/templates/default.conf.template
+COPY docker/14-openai-auth.sh /docker-entrypoint.d/14-openai-auth.sh
 COPY docker/15-lite-image-auth.sh /docker-entrypoint.d/15-lite-image-auth.sh
-RUN chmod +x /docker-entrypoint.d/15-lite-image-auth.sh
+RUN chmod +x /docker-entrypoint.d/14-openai-auth.sh \
+              /docker-entrypoint.d/15-lite-image-auth.sh
 
 COPY --from=builder /app/dist /usr/share/nginx/html
 

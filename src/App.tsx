@@ -1120,7 +1120,8 @@ export function App() {
           </button>
           <div className="project-title">
             <span className="project-mark"><img src="/logo.png" alt="" /></span>
-            <span className="project-title-copy"><strong>Orbit 落地页</strong><span><i />已自动保存</span></span>
+            <span className="project-title-copy"><strong>LLM-HTML</strong><span>
+              <i />已自动保存</span></span>
           </div>
           <div className="workspace-tabs">
             <button className={mode === "preview" ? "active" : ""} onClick={() => setMode("preview")}><Icon name="eye" size={15} />预览</button>
