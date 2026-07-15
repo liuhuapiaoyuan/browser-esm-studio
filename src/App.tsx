@@ -211,6 +211,22 @@ function formatTokenCount(n: number): string {
   return String(n);
 }
 
+/** Mark in-flight reasoning/tools as stopped so the UI does not stick on “流式写入中”. */
+function abortInFlightParts(parts: ChatTimelinePart[]): ChatTimelinePart[] {
+  return parts.map((part) => {
+    if (part.type === "reasoning" && part.streaming) {
+      return { ...part, streaming: false };
+    }
+    if (part.type === "tool" && (part.tool.status === "running" || part.tool.inputStreaming)) {
+      return {
+        type: "tool",
+        tool: { ...part.tool, status: "aborted", inputStreaming: false },
+      };
+    }
+    return part;
+  });
+}
+
 function ContextRing({ used, total }: { used: number; total: number }) {
   const safeTotal = Math.max(total, 1);
   const pct = Math.min(1, Math.max(0, used / safeTotal));
@@ -350,6 +366,11 @@ function ChatPanel({
 
   function stop() {
     abortRef.current?.abort();
+    // Instant UI: don't wait for the agent stream to unwind.
+    updateStreamingMessage((message) => ({
+      ...message,
+      parts: message.parts ? abortInFlightParts(message.parts) : message.parts,
+    }));
   }
 
   async function submit(
@@ -404,6 +425,12 @@ function ChatPanel({
       updateStreamingMessage({ parts: cloneParts() });
     };
 
+    const settleAbortedParts = () => {
+      const next = abortInFlightParts(parts);
+      parts.length = 0;
+      parts.push(...next);
+    };
+
     try {
       completed = await runPlanExecutorAgent(text, sandbox, {
         settings,
@@ -417,6 +444,8 @@ function ChatPanel({
         },
         abortSignal: controller.signal,
         onProgress: (event) => {
+          // Stop must freeze the timeline; late stream ticks must not revive tools.
+          if (controller.signal.aborted) return;
           setProgress(event);
           if (event.type === "usage") {
             setContextUsed(event.inputTokens);
@@ -446,8 +475,24 @@ function ChatPanel({
           }
           if (event.type === "tool") {
             const index = parts.findIndex((part) => part.type === "tool" && part.tool.id === event.tool.id);
-            if (index >= 0) parts[index] = { type: "tool", tool: event.tool };
-            else parts.push({ type: "tool", tool: event.tool });
+            if (index >= 0) {
+              const prev = parts[index];
+              if (prev.type === "tool") {
+                parts[index] = {
+                  type: "tool",
+                  tool: {
+                    ...prev.tool,
+                    ...event.tool,
+                    // Sparse streaming updates omit content/detail — keep the latest body.
+                    title: event.tool.title ?? prev.tool.title,
+                    detail: event.tool.detail ?? prev.tool.detail,
+                    content: event.tool.content !== undefined ? event.tool.content : prev.tool.content,
+                  },
+                };
+              }
+            } else {
+              parts.push({ type: "tool", tool: event.tool });
+            }
             publishParts();
           }
           if (event.type === "text-delta") {
@@ -464,19 +509,42 @@ function ChatPanel({
       if (completed.usage?.inputTokens) {
         setContextUsed(completed.usage.inputTokens);
       }
-      for (const part of parts) {
-        if (part.type === "reasoning") part.streaming = false;
+      if (controller.signal.aborted) {
+        settleAbortedParts();
+        updateStreamingMessage({
+          text: (completed.reply || "").trim() || "已停止生成。",
+          changed: completed.changed,
+          plan: completed.plan,
+          parts: parts.length > 0 ? cloneParts() : undefined,
+          streaming: false,
+        });
+      } else {
+        for (const part of parts) {
+          if (part.type === "reasoning") part.streaming = false;
+        }
+        updateStreamingMessage({
+          text: completed.reply,
+          changed: completed.changed,
+          plan: completed.plan,
+          parts: parts.length > 0 ? cloneParts() : undefined,
+          streaming: false,
+        });
       }
-      updateStreamingMessage({
-        text: completed.reply,
-        changed: completed.changed,
-        plan: completed.plan,
-        parts: parts.length > 0 ? cloneParts() : undefined,
-        streaming: false,
-      });
     } catch (error) {
-      for (const part of parts) {
-        if (part.type === "reasoning") part.streaming = false;
+      if (controller.signal.aborted) {
+        settleAbortedParts();
+      } else {
+        for (const part of parts) {
+          if (part.type === "reasoning") part.streaming = false;
+          if (part.type === "tool" && (part.tool.status === "running" || part.tool.inputStreaming)) {
+            part.tool = {
+              ...part.tool,
+              status: "error",
+              inputStreaming: false,
+              error: part.tool.error ?? "执行中断",
+            };
+          }
+        }
       }
       const snapshot = parts.length > 0 ? cloneParts() : undefined;
       if (controller.signal.aborted) {

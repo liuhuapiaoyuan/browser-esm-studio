@@ -176,6 +176,15 @@ export function createAgentCliRuntime(options: AgentCliRuntimeOptions): AgentCli
       const data = await Promise.race([
         Promise.resolve(cmd.execute(checked.data, baseContext())),
         new Promise<never>((_, reject) => {
+          const cancel = () => {
+            reject(
+              new AgentCliCommandError("CANCELLED", "执行已取消", { retryable: false }),
+            );
+          };
+          if (options.signal?.aborted) {
+            cancel();
+            return;
+          }
           const t = setTimeout(() => {
             reject(
               new AgentCliCommandError("TIMEOUT", `命令超时（${timeoutMs}ms）`, {
@@ -187,9 +196,7 @@ export function createAgentCliRuntime(options: AgentCliRuntimeOptions): AgentCli
             "abort",
             () => {
               clearTimeout(t);
-              reject(
-                new AgentCliCommandError("CANCELLED", "执行已取消", { retryable: false }),
-              );
+              cancel();
             },
             { once: true },
           );

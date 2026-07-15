@@ -32,11 +32,14 @@ export default defineConfig(({ mode }) => {
 
   const proxy: Record<string, string | ProxyOptions> = {
     // Browser → /openai-proxy/v1/... → {VITE_AI_PROXY_TARGET}/v1/...
+    // SSE (chat/completions?stream=true) must not hit short proxy idle timeouts.
     "/openai-proxy": {
       target: proxyTarget,
       changeOrigin: true,
       secure: true,
       rewrite: (pathName) => pathName.replace(/^\/openai-proxy/, ""),
+      timeout: 600_000,
+      proxyTimeout: 600_000,
     },
     // Preview + Agent → /ddb/... → Dynamic DB provider
     "/ddb": {

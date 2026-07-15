@@ -307,9 +307,14 @@ function StreamingFileContent({ content, streaming }: { content: string; streami
 function ToolActivity({ tool }: { tool: AgentToolActivity }) {
   const isFileBody = isFileBodyActivity(tool);
   const streamingArgs = Boolean(tool.inputStreaming);
-  const hasContent = typeof tool.content === "string";
-  const showCode = isFileBody && (hasContent || streamingArgs) && (streamingArgs || tool.status === "running");
-  const [open, setOpen] = useState(tool.status === "running" || streamingArgs);
+  const hasContent = typeof tool.content === "string" && tool.content.length > 0;
+  // Keep the code pane visible while args stream, while the tool runs, or when we
+  // already decoded a body (completion used to wipe the preview).
+  const showCode =
+    isFileBody &&
+    (hasContent || streamingArgs) &&
+    (streamingArgs || tool.status === "running" || hasContent);
+  const [open, setOpen] = useState(tool.status === "running" || streamingArgs || hasContent);
   const previousStatus = useRef(tool.status);
   const bodyRef = useRef<HTMLDivElement>(null);
 
@@ -346,16 +351,19 @@ function ToolActivity({ tool }: { tool: AgentToolActivity }) {
         : "参数生成中"
       : tool.status === "running"
         ? "运行中"
-        : tool.status === "error"
-          ? "失败"
-          : formatDuration(tool.durationMs) || "完成";
+        : tool.status === "aborted"
+          ? "已停止"
+          : tool.status === "error"
+            ? "失败"
+            : formatDuration(tool.durationMs) || "完成";
   const label = [name, tool.detail, status].filter(Boolean).join(" · ");
+  const active = tool.status === "running" || tool.inputStreaming;
 
   return (
     <div className="ai-fold">
       <button
         aria-expanded={open}
-        className={`ai-fold-toggle ${tool.status === "running" || tool.inputStreaming ? "shimmer-text" : ""} ${tool.status === "error" ? "is-error" : ""}`}
+        className={`ai-fold-toggle ${active ? "shimmer-text" : ""} ${tool.status === "error" ? "is-error" : ""} ${tool.status === "aborted" ? "is-aborted" : ""}`}
         onClick={() => setOpen((value) => !value)}
         type="button"
       >
@@ -371,7 +379,13 @@ function ToolActivity({ tool }: { tool: AgentToolActivity }) {
                 ? <StreamingFileContent content="" streaming />
                 : tool.status === "running"
                   ? "正在操作…"
-                  : `${name} 已完成`}
+                  : tool.status === "aborted"
+                    ? hasContent
+                      ? <StreamingFileContent content={tool.content ?? ""} streaming={false} />
+                      : "已停止"
+                    : hasContent
+                      ? <StreamingFileContent content={tool.content ?? ""} streaming={false} />
+                      : `${name} 已完成`}
         </div>
       )}
     </div>

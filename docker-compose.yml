@@ -15,7 +15,8 @@ services:
       - .env
     environment:
       # OpenAI-compatible API（浏览器 → /openai-proxy → 此处）
-      AI_PROXY_TARGET: ${AI_PROXY_TARGET:-https://api.openai.com}
+      # Prefer AI_PROXY_TARGET; fall back to VITE_AI_PROXY_TARGET (dev .env name).
+      AI_PROXY_TARGET: ${AI_PROXY_TARGET:-${VITE_AI_PROXY_TARGET:-https://api.openai.com}}
       # nginx 注入 Authorization；建议放 .env，勿提交仓库
       VITE_AI_API_KEY: ${VITE_AI_API_KEY:-}
 

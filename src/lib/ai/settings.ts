@@ -18,8 +18,8 @@ export const COMPACT_RATIO = 0.6;
 
 const DEFAULTS: AiSettings = {
   baseURL: import.meta.env.VITE_AI_BASE_URL || "/openai-proxy/v1",
-  apiKey: import.meta.env.VITE_AI_API_KEY || "",
-  model: import.meta.env.VITE_AI_MODEL || "gpt-4o",
+  apiKey: import.meta.env.VITE_AI_API_KEY || "abc",
+  model: import.meta.env.VITE_AI_MODEL || "MiniMax-M2.7-highspeed",
   contextWindow: DEFAULT_CONTEXT_WINDOW,
 };
 

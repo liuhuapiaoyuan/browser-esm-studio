@@ -6,6 +6,7 @@ import {
   updateRequestedSkillIds,
 } from "../src/components/skill-picker.tsx";
 import {
+  appendToolArgDelta,
   extractStreamingFileFields,
   isCliFileBodyRaw,
 } from "../src/lib/ai/stream-file-preview.ts";
@@ -71,6 +72,32 @@ assert.deepEqual(
     '{"command":"sandbox.writeFile","path":"src/a.ts","content":"const a = 1"}',
   ),
   { path: "src/a.ts", content: "const a = 1" },
+);
+
+// Hybrid: path at top level, content only inside stringified arguments.
+assert.deepEqual(
+  extractStreamingFileFields(
+    '{"command":"sandbox.addFile","path":"src/d.tsx","arguments":"{\\"content\\":\\"code here"}',
+  ),
+  { path: "src/d.tsx", content: "code here" },
+);
+
+// Path aliases used by models / normalize-args.
+assert.deepEqual(
+  extractStreamingFileFields(
+    '{"command":"sandbox.addFile","arguments":{"file":"src/e.tsx","content":"export fn"}}',
+  ),
+  { path: "src/e.tsx", content: "export fn" },
+);
+
+// Cumulative provider snapshots must not duplicate the JSON prefix.
+assert.equal(
+  appendToolArgDelta('{"command":"sandbox.addFile"', '{"command":"sandbox.addFile","arguments":{'),
+  '{"command":"sandbox.addFile","arguments":{',
+);
+assert.equal(
+  appendToolArgDelta('{"command":"sandbox.addFile"', ',"path":"x"'),
+  '{"command":"sandbox.addFile","path":"x"',
 );
 
 console.log("Agent UI smoke test passed.");

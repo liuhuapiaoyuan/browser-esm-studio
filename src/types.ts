@@ -28,7 +28,7 @@ export type AgentToolActivity = {
   /** Human-readable label (e.g. Agent CLI command title); preferred over name in UI. */
   title?: string;
   detail?: string;
-  status: "running" | "completed" | "error";
+  status: "running" | "completed" | "error" | "aborted";
   durationMs?: number;
   error?: string;
   /** Decoded file body while write/add/replace args stream in (or at execute). */

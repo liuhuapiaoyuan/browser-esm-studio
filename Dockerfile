@@ -13,7 +13,7 @@ COPY . .
 # Browser defaults stay same-origin so nginx proxies work in production.
 # Override at build time if needed: --build-arg VITE_AI_BASE_URL=...
 ARG VITE_AI_BASE_URL=/openai-proxy/v1
-ARG VITE_AI_MODEL=gpt-4o
+ARG VITE_AI_MODEL=shuangyuan-code
 ARG VITE_LITE_IMAGE_BASE_URL=/lite-image-proxy/v1
 ENV VITE_AI_BASE_URL=$VITE_AI_BASE_URL \
     VITE_AI_MODEL=$VITE_AI_MODEL \

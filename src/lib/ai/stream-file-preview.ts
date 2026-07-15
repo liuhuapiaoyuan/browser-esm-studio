@@ -41,6 +41,8 @@ export function extractJsonStringField(raw: string, field: string): string | und
 }
 
 const ARG_BAG_KEYS = ["arguments", "args", "input", "params"] as const;
+const PATH_KEYS = ["path", "file", "filepath", "filePath"] as const;
+const BODY_KEYS = ["newString", "new_string", "content", "oldString", "old_string"] as const;
 
 const FILE_BODY_CLI_RE = /sandbox\.(writeFile|addFile|replaceInFile)/;
 
@@ -48,13 +50,46 @@ export function isCliFileBodyRaw(raw: string): boolean {
   return FILE_BODY_CLI_RE.test(raw);
 }
 
+function firstStringField(source: string, keys: readonly string[]): string | undefined {
+  for (const key of keys) {
+    const value = extractJsonStringField(source, key);
+    if (value !== undefined) return value;
+  }
+  return undefined;
+}
+
 function fieldsFromPartialJson(source: string): { path?: string; content?: string } {
-  const path = extractJsonStringField(source, "path");
-  const content =
-    extractJsonStringField(source, "newString") ??
-    extractJsonStringField(source, "content") ??
-    extractJsonStringField(source, "oldString");
+  return {
+    path: firstStringField(source, PATH_KEYS),
+    content: firstStringField(source, BODY_KEYS),
+  };
+}
+
+function mergeFields(
+  ...parts: Array<{ path?: string; content?: string }>
+): { path?: string; content?: string } {
+  let path: string | undefined;
+  let content: string | undefined;
+  for (const part of parts) {
+    if (part.path !== undefined && part.path.length > (path?.length ?? -1)) path = part.path;
+    if (part.content !== undefined && part.content.length > (content?.length ?? -1)) {
+      content = part.content;
+    }
+  }
   return { path, content };
+}
+
+/**
+ * Some OpenAI-compatible providers (including certain MiniMax gateways) resend the
+ * full arguments buffer on every chunk instead of a true append delta.
+ * Detect that and keep a single coherent JSON prefix.
+ */
+export function appendToolArgDelta(raw: string, delta: string): string {
+  if (!delta) return raw;
+  if (!raw) return delta;
+  if (delta.startsWith(raw)) return delta;
+  if (raw.startsWith(delta)) return raw;
+  return raw + delta;
 }
 
 /**
@@ -63,17 +98,19 @@ function fieldsFromPartialJson(source: string): { path?: string; content?: strin
  */
 export function extractStreamingFileFields(raw: string): { path?: string; content?: string } {
   const direct = fieldsFromPartialJson(raw);
-  if (direct.path !== undefined || direct.content !== undefined) return direct;
 
-  // Models often pass arguments as a JSON string:
-  // {"command":"sandbox.addFile","arguments":"{\"path\":\"…\",\"content\":\"…"}
-  // Nested keys are escaped, so unwrap the bag first.
+  // Always unwrap stringified bags — a top-level path must not skip nested content.
+  // e.g. {"command":"…","path":"a.tsx","arguments":"{\"content\":\"…"}
+  let fromBag: { path?: string; content?: string } = {};
   for (const key of ARG_BAG_KEYS) {
     const inner = extractJsonStringField(raw, key);
     if (inner === undefined || inner.length === 0) continue;
     const nested = fieldsFromPartialJson(inner);
-    if (nested.path !== undefined || nested.content !== undefined) return nested;
+    if (nested.path !== undefined || nested.content !== undefined) {
+      fromBag = nested;
+      break;
+    }
   }
 
-  return direct;
+  return mergeFields(direct, fromBag);
 }

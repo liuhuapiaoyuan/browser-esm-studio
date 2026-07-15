@@ -17,7 +17,8 @@
     "test:ddb": "bun scripts/smoke-ddb.mjs",
     "test:agent-cli": "bun scripts/smoke-agent-cli.mjs",
     "test": "bun run test:sandbox && bun run test:preview && bun run test:typecheck && bun run test:skills && bun run test:agent-ui && bun run test:ddb && bun run test:agent-cli",
-    "postinstall": "bun run build:runtime"
+    "postinstall": "bun run build:runtime",
+    "docker:push": "bun docker.ts"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^3.0.7",

@@ -16,6 +16,7 @@ import {
   type PreviewConsoleAccess,
 } from "../agent-cli";
 import {
+  appendToolArgDelta,
   extractJsonStringField,
   extractStreamingFileFields,
   isCliFileBodyRaw,
@@ -277,16 +278,28 @@ const META_TOOL_TITLES: Record<string, string> = {
 function cliExecuteArgs(input: unknown): Record<string, unknown> {
   if (!input || typeof input !== "object") return {};
   const values = input as Record<string, unknown>;
-  if (values.arguments && typeof values.arguments === "object") {
-    return values.arguments as Record<string, unknown>;
-  }
-  if (values.args && typeof values.args === "object") {
-    return values.args as Record<string, unknown>;
+  const bags = [values.arguments, values.args, values.input, values.params];
+  for (const bag of bags) {
+    if (bag && typeof bag === "object" && !Array.isArray(bag)) {
+      return bag as Record<string, unknown>;
+    }
+    if (typeof bag === "string" && bag.trim()) {
+      try {
+        const parsed = JSON.parse(bag) as unknown;
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          return parsed as Record<string, unknown>;
+        }
+      } catch {
+        // Partial / invalid JSON while streaming — fall through.
+      }
+    }
   }
   // Flattened form: path/content/… sit on the top level.
   const flat: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(values)) {
-    if (key === "command" || key === "arguments" || key === "args") continue;
+    if (key === "command" || key === "arguments" || key === "args" || key === "input" || key === "params") {
+      continue;
+    }
     flat[key] = value;
   }
   return flat;
@@ -380,8 +393,18 @@ function fileBodyToolPreview(name: string, input: unknown): { detail?: string; c
         : typeof args.content === "string"
           ? args.content
           : undefined;
+    const path =
+      typeof args.path === "string"
+        ? args.path
+        : typeof args.file === "string"
+          ? args.file
+          : typeof args.filepath === "string"
+            ? args.filepath
+            : typeof args.filePath === "string"
+              ? args.filePath
+              : undefined;
     return {
-      detail: typeof args.path === "string" ? args.path : toolDetail(input),
+      detail: path ?? toolDetail(input),
       content,
     };
   }
@@ -400,6 +423,16 @@ function formatToolFailure(output: unknown): string | undefined {
     }
   }
   return "工具执行失败";
+}
+
+function isCancelledToolOutput(output: unknown): boolean {
+  if (!output || typeof output !== "object") return false;
+  const values = output as Record<string, unknown>;
+  if (values.ok !== false) return false;
+  if (values.error && typeof values.error === "object") {
+    return (values.error as { code?: unknown }).code === "CANCELLED";
+  }
+  return false;
 }
 
 export async function runPlanExecutorAgent(
@@ -542,17 +575,22 @@ export async function runPlanExecutorAgent(
       } else {
         error = formatToolFailure(toolOutput.output);
       }
+      const cancelled =
+        options.abortSignal?.aborted === true ||
+        isCancelledToolOutput(toolOutput.type === "tool-result" ? toolOutput.output : undefined);
+      const preview = fileBodyToolPreview(toolCall.toolName, toolCall.input);
       options.onProgress?.({
         type: "tool",
         tool: {
           id: toolCall.toolCallId,
           name: toolCall.toolName,
           title: toolTitle(toolCall.toolName, toolCall.input),
-          detail: toolDetail(toolCall.input),
-          status: error ? "error" : "completed",
+          detail: preview.detail ?? toolDetail(toolCall.input),
+          status: cancelled ? "aborted" : error ? "error" : "completed",
           durationMs: toolExecutionMs,
-          error,
+          error: cancelled ? undefined : error,
           inputStreaming: false,
+          content: preview.content,
         },
       });
     },
@@ -583,10 +621,11 @@ export async function runPlanExecutorAgent(
   const streamingToolArgs = new Map<string, { name: string; raw: string }>();
   let toolInputFlush: ReturnType<typeof setTimeout> | undefined;
   const dirtyToolInputs = new Set<string>();
+  const aborted = () => options.abortSignal?.aborted === true;
 
   const streamingToolTitle = (toolName: string, raw: string) => {
     if (toolName === "cli_execute") {
-      const command = extractJsonStringField(raw, "command");
+      const command = extractJsonStringField(raw, "command")?.trim();
       if (command) return commandTitle(command) ?? command;
     }
     return META_TOOL_TITLES[toolName] ?? toolName;
@@ -600,104 +639,136 @@ export async function runPlanExecutorAgent(
     return {
       path:
         extractJsonStringField(raw, "path") ??
+        extractJsonStringField(raw, "file") ??
         extractJsonStringField(raw, "query"),
     };
   };
 
   const flushToolInputPreviews = () => {
     toolInputFlush = undefined;
+    if (aborted()) return;
     for (const id of dirtyToolInputs) {
       const entry = streamingToolArgs.get(id);
       if (!entry) continue;
       const preview = streamingPreview(entry.name, entry.raw);
-      options.onProgress?.({
-        type: "tool",
-        tool: {
-          id,
-          name: entry.name,
-          title: streamingToolTitle(entry.name, entry.raw),
-          detail: preview.path,
-          status: "running",
-          inputStreaming: true,
-          content: "content" in preview ? preview.content : undefined,
-        },
-      });
+      const tool: AgentToolActivity = {
+        id,
+        name: entry.name,
+        title: streamingToolTitle(entry.name, entry.raw),
+        detail: preview.path,
+        status: "running",
+        inputStreaming: true,
+      };
+      if (typeof preview.content === "string") tool.content = preview.content;
+      options.onProgress?.({ type: "tool", tool });
     }
     dirtyToolInputs.clear();
   };
 
   const scheduleToolInputFlush = () => {
-    if (toolInputFlush !== undefined) return;
-    toolInputFlush = setTimeout(flushToolInputPreviews, 40);
+    if (aborted() || toolInputFlush !== undefined) return;
+    // rAF keeps previews smooth without flooding React on every token.
+    toolInputFlush = setTimeout(flushToolInputPreviews, 16);
   };
 
-  for await (const part of result.stream) {
-    switch (part.type) {
-      case "finish-step":
-        // Per-step usage.inputTokens = real prompt size for that model call.
-        reportUsage(part.usage);
-        break;
-      case "reasoning-start":
-        options.onProgress?.({ type: "reasoning-start" });
-        break;
-      case "reasoning-delta":
-        reasoning += part.text;
-        options.onProgress?.({ type: "reasoning-delta", delta: part.text });
-        break;
-      case "reasoning-end":
-        options.onProgress?.({ type: "reasoning-end" });
-        break;
-      case "tool-input-start":
-        streamingToolArgs.set(part.id, { name: part.toolName, raw: "" });
-        dirtyToolInputs.add(part.id);
-        // Immediate first paint so the fold appears before the first delta flush.
-        flushToolInputPreviews();
-        break;
-      case "tool-input-delta": {
-        const entry = streamingToolArgs.get(part.id);
-        if (entry) {
-          entry.raw += part.delta;
+  const finalizeStreamingTools = () => {
+    if (toolInputFlush !== undefined) {
+      clearTimeout(toolInputFlush);
+      toolInputFlush = undefined;
+    }
+    for (const [id, entry] of streamingToolArgs) {
+      const preview = streamingPreview(entry.name, entry.raw);
+      const tool: AgentToolActivity = {
+        id,
+        name: entry.name,
+        title: streamingToolTitle(entry.name, entry.raw),
+        detail: preview.path,
+        status: "aborted",
+        inputStreaming: false,
+      };
+      if (typeof preview.content === "string") tool.content = preview.content;
+      options.onProgress?.({ type: "tool", tool });
+    }
+    streamingToolArgs.clear();
+    dirtyToolInputs.clear();
+  };
+
+  try {
+    for await (const part of result.stream) {
+      if (aborted()) break;
+      switch (part.type) {
+        case "finish-step":
+          // Per-step usage.inputTokens = real prompt size for that model call.
+          reportUsage(part.usage);
+          break;
+        case "reasoning-start":
+          options.onProgress?.({ type: "reasoning-start" });
+          break;
+        case "reasoning-delta":
+          reasoning += part.text;
+          options.onProgress?.({ type: "reasoning-delta", delta: part.text });
+          break;
+        case "reasoning-end":
+          options.onProgress?.({ type: "reasoning-end" });
+          break;
+        case "tool-input-start":
+          streamingToolArgs.set(part.id, { name: part.toolName, raw: "" });
           dirtyToolInputs.add(part.id);
-          scheduleToolInputFlush();
+          // Immediate first paint so the fold appears before the first delta flush.
+          flushToolInputPreviews();
+          break;
+        case "tool-input-delta": {
+          const entry = streamingToolArgs.get(part.id);
+          if (entry) {
+            entry.raw = appendToolArgDelta(entry.raw, part.delta);
+            dirtyToolInputs.add(part.id);
+            scheduleToolInputFlush();
+          }
+          break;
         }
-        break;
-      }
-      case "tool-input-end": {
-        if (toolInputFlush !== undefined) {
-          clearTimeout(toolInputFlush);
-          toolInputFlush = undefined;
-        }
-        dirtyToolInputs.add(part.id);
-        flushToolInputPreviews();
-        const ended = streamingToolArgs.get(part.id);
-        if (ended) {
-          const preview = streamingPreview(ended.name, ended.raw);
-          options.onProgress?.({
-            type: "tool",
-            tool: {
+        case "tool-input-end": {
+          if (toolInputFlush !== undefined) {
+            clearTimeout(toolInputFlush);
+            toolInputFlush = undefined;
+          }
+          dirtyToolInputs.add(part.id);
+          flushToolInputPreviews();
+          const ended = streamingToolArgs.get(part.id);
+          if (ended) {
+            const preview = streamingPreview(ended.name, ended.raw);
+            const tool: AgentToolActivity = {
               id: part.id,
               name: ended.name,
               title: streamingToolTitle(ended.name, ended.raw),
               detail: preview.path,
               status: "running",
               inputStreaming: false,
-              content: "content" in preview ? preview.content : undefined,
-            },
-          });
-          streamingToolArgs.delete(part.id);
+            };
+            if (typeof preview.content === "string") tool.content = preview.content;
+            options.onProgress?.({ type: "tool", tool });
+            streamingToolArgs.delete(part.id);
+          }
+          break;
         }
-        break;
+        case "text-delta":
+          reply += part.text;
+          options.onProgress?.({ type: "text-delta", delta: part.text });
+          break;
+        case "error":
+          throw part.error;
       }
-      case "text-delta":
-        reply += part.text;
-        options.onProgress?.({ type: "text-delta", delta: part.text });
-        break;
-      case "error":
-        throw part.error;
     }
+  } finally {
+    if (aborted()) finalizeStreamingTools();
+    else if (toolInputFlush !== undefined) clearTimeout(toolInputFlush);
   }
 
-  if (toolInputFlush !== undefined) clearTimeout(toolInputFlush);
+  if (aborted()) {
+    const reason = options.abortSignal?.reason;
+    throw reason instanceof Error
+      ? reason
+      : new DOMException("Aborted", "AbortError");
+  }
 
   // Ensure stream errors / final state are surfaced.
   await result.text;
