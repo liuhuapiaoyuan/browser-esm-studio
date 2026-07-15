@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { AgentResponse } from "./components/ai-elements/agent-response";
+import { SkillPicker, snapshotSkillIds } from "./components/skill-picker";
 import { DEFAULT_FILES } from "./defaultProject";
 import { AGENT_SUGGESTIONS, formatAgentError, runPlanExecutorAgent, type AgentProgress } from "./lib/ai/agent";
 import { requestAgentNotifyPermission, runAgentHooks } from "./lib/ai/hooks";
 import { COMPACT_RATIO, compactThreshold, isAiConfigured, loadAiSettings, saveAiSettings, type AiSettings } from "./lib/ai/settings";
+import { defaultSkillIds, listSkills, resolveSkills, type SkillId } from "./lib/ai/skills/registry";
 import { buildFileTree, fileLanguage, normalizePath, type TreeNode } from "./lib/path";
 import { previewUrl, syncPreviewProject } from "./lib/preview";
 import { createPreviewConsole } from "./lib/preview-console";
@@ -29,6 +31,8 @@ import type {
 
 const STORAGE_KEY = "browser-esm-studio-project-v2";
 const SESSION_ID = "workspace";
+const AGENT_SKILLS = listSkills();
+const SKILL_TITLE_BY_ID = new Map(AGENT_SKILLS.map((skill) => [skill.id, skill.title]));
 
 const ICONS = {
   sparkle: ["M12 3l1.45 4.05L17.5 8.5l-4.05 1.45L12 14l-1.45-4.05L6.5 8.5l4.05-1.45L12 3Z", "M18 14l.72 2.02L21 17l-2.28.98L18 20l-.72-2.02L15 17l2.28-.98L18 14Z"],
@@ -275,17 +279,19 @@ function ChatPanel({
   waitForPreviewErrors,
   getFiles,
   submitRef,
+  onOpenPreview,
 }: {
   sandbox: Sandbox;
   getPreviewErrors: () => string[];
   waitForPreviewErrors: (settleMs?: number) => Promise<string[]>;
   getFiles: () => FileMap;
   submitRef?: { current: ((text: string) => void) | null };
+  onOpenPreview?: () => void;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: "assistant",
-      text: "已接入真实 AI Agent（Plan → Executor，流式输出）。先在右上角配置你的 ChatGPT 兼容 API，然后描述想改的内容。",
+      text: "你好，我是你的 AI 构建搭档。告诉我想做什么，我会先规划，再为你实时修改项目并验证结果。",
     },
   ]);
   const [prompt, setPrompt] = useState("");
@@ -294,6 +300,11 @@ function ChatPanel({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState<AiSettings>(() => loadAiSettings());
   const [draft, setDraft] = useState<AiSettings>(() => loadAiSettings());
+  const [requestedSkillIds, setRequestedSkillIds] = useState<SkillId[]>(() => defaultSkillIds());
+  const resolvedSkills = useMemo(
+    () => resolveSkills(requestedSkillIds),
+    [requestedSkillIds],
+  );
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const workingRef = useRef(false);
@@ -341,16 +352,21 @@ function ChatPanel({
     abortRef.current?.abort();
   }
 
-  async function submit(event: { preventDefault(): void } | null, suggestion?: string) {
+  async function submit(
+    event: { preventDefault(): void } | null,
+    suggestion?: string,
+    skillIdsOverride?: readonly SkillId[],
+  ) {
     event?.preventDefault();
     const text = (suggestion || prompt).trim();
     if (!text || workingRef.current) return;
+    const skillIdsForTurn = snapshotSkillIds(skillIdsOverride ?? resolvedSkills.activeIds);
 
     if (!isAiConfigured(settings)) {
       setSettingsOpen(true);
       setMessages((current) => [
         ...current,
-        { role: "user", text },
+        { role: "user", text, skillIds: skillIdsForTurn },
         { role: "assistant", text: "请先配置 API Base URL、API Key 和 Model，再发送请求。" },
       ]);
       setPrompt("");
@@ -364,7 +380,7 @@ function ChatPanel({
     setPrompt("");
     setMessages((current) => [
       ...current,
-      { role: "user", text },
+      { role: "user", text, skillIds: skillIdsForTurn },
       { role: "assistant", text: "", streaming: true },
     ]);
     workingRef.current = true;
@@ -392,6 +408,7 @@ function ChatPanel({
       completed = await runPlanExecutorAgent(text, sandbox, {
         settings,
         history,
+        skillIds: skillIdsForTurn,
         conversationSummary,
         previewErrors: getPreviewErrors(),
         previewConsole: {
@@ -498,7 +515,7 @@ function ChatPanel({
         },
         {
           followUp: (followUpPrompt) => {
-            void submit(null, followUpPrompt);
+            void submit(null, followUpPrompt, skillIdsForTurn);
           },
         },
       );
@@ -519,19 +536,37 @@ function ChatPanel({
     <aside className="chat-panel">
       <div className="chat-header">
         <div className="brand-lockup">
-          <span className="brand-icon"><Icon name="sparkle" size={17} /></span>
-          <strong>ESM Studio</strong>
+          <span className="brand-icon"><img src="/logo.png" alt="" /></span>
+          <span className="brand-copy">
+            <strong>ESM Studio</strong>
+            <small>AI 应用创作工作台</small>
+          </span>
         </div>
-        <button
-          className="project-menu"
-          title="API 设置"
-          onClick={() => {
-            setDraft(settings);
-            setSettingsOpen((value) => !value);
-          }}
-        >
-          <Icon name="settings" size={16} />
-        </button>
+        <div className="chat-header-actions">
+          {onOpenPreview ? (
+            <button
+              type="button"
+              className="project-menu mobile-preview-trigger"
+              title="打开预览"
+              onClick={onOpenPreview}
+            >
+              <Icon name="eye" size={16} />
+              <span>预览</span>
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="project-menu"
+            title="API 设置"
+            onClick={() => {
+              setDraft(settings);
+              setSettingsOpen((value) => !value);
+            }}
+          >
+            <Icon name="settings" size={16} />
+            <span>设置</span>
+          </button>
+        </div>
       </div>
       {settingsOpen && (
         <div className="ai-settings">
@@ -587,30 +622,51 @@ function ChatPanel({
         </div>
       )}
       <div className="chat-context">
-        <div>
+        <div className="context-state">
           <span className={`pulse-dot ${configured ? "" : "warn"}`} />
-          {configured ? "Plan · Executor · Stream" : "需要配置 API"}
+          {configured ? "Agent 已就绪" : "需要配置 API"}
         </div>
-        <span>{settings.model || "未选模型"}</span>
+        <span className="model-pill">{settings.model || "未选模型"}</span>
       </div>
       <div className="messages" ref={scrollRef}>
         <div className="project-intro">
-          <span className="intro-icon"><Icon name="sparkle" size={21} /></span>
-          <div>
-            <h2>Orbit 落地页</h2>
-            <p>虚拟文件 · React · TypeScript · esm.sh · 流式 Agent</p>
+          <div className="intro-orb intro-orb-one" />
+          <div className="intro-orb intro-orb-two" />
+          <div className="project-intro-copy">
+            <span className="intro-kicker"><Icon name="sparkle" size={12} /> AI 全栈创作</span>
+            <h2>让灵感，即刻成为应用</h2>
+            <p>从一句描述开始，AI 为你规划、编码并实时呈现。</p>
+            <div className="intro-features">
+              <span>实时预览</span>
+              <span>智能改码</span>
+              <span>一键导出</span>
+            </div>
           </div>
+          <img className="intro-character" src="/index-bg.webp" alt="AI 创作助手" />
         </div>
         {messages.map((message, index) => (
           <div className={`message ${message.role}`} key={`${message.role}-${index}`}>
             {message.role === "assistant" && (
-              <span className="assistant-avatar"><Icon name="sparkle" size={13} /></span>
+              <span className="assistant-avatar"><img src="/logo.png" alt="" /></span>
             )}
             <div className="message-content">
               {message.role === "assistant" ? (
                 <AgentResponse message={message} status={statusLabel(progress, configured)} />
               ) : (
-                <p>{message.text}</p>
+                <>
+                  {message.skillIds ? (
+                    <div className="message-skills" aria-label="本轮加载技能">
+                      {message.skillIds.length ? (
+                        message.skillIds.map((id) => (
+                          <span key={id}>{SKILL_TITLE_BY_ID.get(id) ?? id}</span>
+                        ))
+                      ) : (
+                        <span className="is-empty">无技能</span>
+                      )}
+                    </div>
+                  ) : null}
+                  <p>{message.text}</p>
+                </>
               )}
             </div>
           </div>
@@ -625,6 +681,14 @@ function ChatPanel({
           ))}
         </div>
         <form className="composer" onSubmit={(event) => submit(event)}>
+          <SkillPicker
+            skills={AGENT_SKILLS}
+            requestedIds={requestedSkillIds}
+            activeIds={resolvedSkills.activeIds}
+            requiredBy={resolvedSkills.requiredBy}
+            disabled={working}
+            onChange={setRequestedSkillIds}
+          />
           <textarea
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
@@ -841,12 +905,39 @@ export function App() {
   const [showConsole, setShowConsole] = useState(false);
   const [typechecking, setTypechecking] = useState(false);
   const [pickMode, setPickMode] = useState(false);
+  const [mobilePreviewOpen, setMobilePreviewOpen] = useState(false);
   const agentSubmitRef = useRef<((text: string) => void) | null>(null);
+
+  function openMobilePreview() {
+    setMode("preview");
+    setMobilePreviewOpen(true);
+  }
+
+  function closeMobilePreview() {
+    setMobilePreviewOpen(false);
+  }
 
   useEffect(() => sandbox.subscribe(setFiles), [sandbox]);
 
   useEffect(() => previewConsole.subscribe(() => setLogs(previewConsole.getLogs())), [previewConsole]);
 
+  useEffect(() => {
+    if (!mobilePreviewOpen) return;
+    function onKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape") closeMobilePreview();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [mobilePreviewOpen]);
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 768px)");
+    function onChange() {
+      if (!media.matches) setMobilePreviewOpen(false);
+    }
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, []);
   useEffect(() => {
     requestAgentNotifyPermission();
   }, []);
@@ -1004,10 +1095,33 @@ export function App() {
         submitRef={agentSubmitRef}
         getPreviewErrors={() => previewConsole.getErrors()}
         waitForPreviewErrors={(settleMs = 1800) => previewConsole.waitForErrors(settleMs)}
+        onOpenPreview={openMobilePreview}
       />
-      <main className="workspace">
+      <div
+        className={`mobile-preview-backdrop ${mobilePreviewOpen ? "is-open" : ""}`}
+        onClick={closeMobilePreview}
+        aria-hidden={!mobilePreviewOpen}
+      />
+      <main
+        className={`workspace ${mobilePreviewOpen ? "is-mobile-dialog-open" : ""}`}
+        role={mobilePreviewOpen ? "dialog" : undefined}
+        aria-modal={mobilePreviewOpen || undefined}
+        aria-label={mobilePreviewOpen ? "预览" : undefined}
+      >
         <header className="workspace-header">
-          <div className="project-title"><strong>Orbit 落地页</strong><span>已本地保存</span></div>
+          <button
+            type="button"
+            className="mobile-preview-close icon-button subtle"
+            title="关闭预览"
+            aria-label="关闭预览"
+            onClick={closeMobilePreview}
+          >
+            <Icon name="close" size={16} />
+          </button>
+          <div className="project-title">
+            <span className="project-mark"><img src="/logo.png" alt="" /></span>
+            <span className="project-title-copy"><strong>Orbit 落地页</strong><span><i />已自动保存</span></span>
+          </div>
           <div className="workspace-tabs">
             <button className={mode === "preview" ? "active" : ""} onClick={() => setMode("preview")}><Icon name="eye" size={15} />预览</button>
             <button className={mode === "code" ? "active" : ""} onClick={() => { setPickMode(false); setMode("code"); }}><Icon name="code" size={15} />代码</button>

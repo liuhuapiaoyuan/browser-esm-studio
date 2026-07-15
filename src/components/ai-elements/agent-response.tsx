@@ -259,7 +259,6 @@ const TOOL_LABELS: Record<string, string> = {
   cli_describe: "查看命令说明",
   cli_diagnose: "诊断失败",
   cli_execute: "执行命令",
-  loadSkill: "加载技能",
 };
 
 function formatDuration(durationMs?: number) {

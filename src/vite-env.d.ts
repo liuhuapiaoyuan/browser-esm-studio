@@ -10,6 +10,11 @@ interface ImportMetaEnv {
   readonly VITE_DYNAMIC_DB_USER_ID?: string;
   readonly VITE_DDB_ROLES?: string;
   readonly VITE_DYNAMIC_DB_USER_ROLES?: string;
+  readonly VITE_LITE_IMAGE_BASE_URL?: string;
+  readonly VITE_LITE_IMAGE_API_KEY?: string;
+  readonly VITE_LITE_IMAGE_MODEL?: string;
+  readonly VITE_LITE_IMAGE_PROXY_TARGET?: string;
+  readonly VITE_SILICONFLOW_API_KEY?: string;
 }
 
 interface ImportMeta {

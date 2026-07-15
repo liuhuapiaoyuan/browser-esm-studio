@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createSandbox } from "../src/lib/sandbox.ts";
-import { createAgentCliRuntime } from "../src/lib/agent-cli/index.ts";
+import { createAgentCliRuntime, createAgentCliTools } from "../src/lib/agent-cli/index.ts";
 import { ddbPlugin } from "../src/lib/agent-cli/plugins/ddb/index.ts";
 import { sandboxPlugin } from "../src/lib/agent-cli/plugins/sandbox/index.ts";
 import { defineCommand } from "../src/lib/agent-cli/define-command.ts";
@@ -163,5 +163,66 @@ const aliasedOps = await runtime.execute("sandbox.applyOperations", {
   ],
 });
 assert.equal(aliasedOps.ok, true, aliasedOps.error?.message);
+
+const sandboxOnlyRuntime = createAgentCliRuntime({
+  plugins: [sandboxPlugin],
+  context: { sandbox, previewConsole: { getErrors: () => [] } },
+});
+assert.equal(
+  sandboxOnlyRuntime.search("schema setup", 10).some((hit) => hit.name.startsWith("ddb.")),
+  false,
+);
+assert.equal(sandboxOnlyRuntime.describe("ddb.setupSchema").ok, false);
+const filesBeforeDeniedDdb = sandbox.list();
+const deniedDdb = await sandboxOnlyRuntime.execute("ddb.setupSchema", {
+  rootSchema: { collections: {} },
+});
+assert.equal(deniedDdb.ok, false);
+assert.equal(deniedDdb.error?.code, "COMMAND_NOT_FOUND");
+assert.deepEqual(sandbox.list(), filesBeforeDeniedDdb);
+
+const emptyRuntime = createAgentCliRuntime({
+  plugins: [],
+  context: { sandbox, previewConsole: { getErrors: () => [] } },
+});
+assert.deepEqual(emptyRuntime.list(), []);
+assert.deepEqual(emptyRuntime.search("read schema", 20), []);
+assert.equal((await emptyRuntime.execute("sandbox.listFiles", {})).error?.code, "COMMAND_NOT_FOUND");
+assert.equal((await emptyRuntime.execute("ddb.getSchema", {})).error?.code, "COMMAND_NOT_FOUND");
+
+const expectedMetaTools = ["cli_search", "cli_describe", "cli_execute", "cli_diagnose"];
+assert.deepEqual(Object.keys(createAgentCliTools(emptyRuntime)), expectedMetaTools);
+assert.deepEqual(Object.keys(createAgentCliTools(runtime)), expectedMetaTools);
+
+// Models often wrap meta-tools as cli_execute.command — bridge must fulfill, not COMMAND_NOT_FOUND
+const tools = createAgentCliTools(runtime);
+const executeMeta = tools.cli_execute.execute;
+assert.equal(typeof executeMeta, "function");
+const toolOpts = {
+  toolCallId: "smoke",
+  messages: [],
+  abortSignal: new AbortController().signal,
+};
+const miswrappedSearch = await executeMeta(
+  { command: "cli_search", arguments: { query: "generate image illustration", limit: 5 } },
+  { ...toolOpts, toolCallId: "smoke-meta-search" },
+);
+assert.equal(miswrappedSearch.ok, true);
+assert.equal(miswrappedSearch.query, "generate image illustration");
+assert.ok(Array.isArray(miswrappedSearch.commands));
+
+const miswrappedDescribe = await executeMeta(
+  { command: "cli_describe", arguments: { command: "sandbox.listFiles" } },
+  { ...toolOpts, toolCallId: "smoke-meta-describe" },
+);
+assert.equal(miswrappedDescribe.ok, true);
+assert.equal(miswrappedDescribe.command, "sandbox.listFiles");
+
+const nestedExecute = await executeMeta(
+  { command: "cli_execute", arguments: { command: "sandbox.listFiles" } },
+  { ...toolOpts, toolCallId: "smoke-meta-nested" },
+);
+assert.equal(nestedExecute.ok, false);
+assert.equal(nestedExecute.error?.code, "INVALID_ARGUMENT");
 
 console.log("Agent CLI smoke test passed.");

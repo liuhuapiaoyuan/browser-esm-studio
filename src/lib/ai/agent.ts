@@ -4,16 +4,22 @@ import type { Sandbox } from "../sandbox";
 import type { AgentToolActivity } from "../../types";
 import { compactLoopMessages, estimateTextTokens, prepareHistoryContext } from "./context";
 import { createLanguageModel } from "./provider";
-import { createSkillTools } from "./skillTools";
-import { buildSkillsPromptSection } from "./skills/registry";
+import {
+  buildSkillsPromptSection,
+  resolveSkills,
+  type SkillId,
+} from "./skills/registry";
 import { compactThreshold, isAiConfigured, loadAiSettings, type AiSettings } from "./settings";
 import {
   createAgentCliRuntime,
   createAgentCliTools,
   type PreviewConsoleAccess,
 } from "../agent-cli";
-import { ddbPlugin } from "../agent-cli/plugins/ddb";
-import { sandboxPlugin } from "../agent-cli/plugins/sandbox";
+import {
+  extractJsonStringField,
+  extractStreamingFileFields,
+  isCliFileBodyRaw,
+} from "./stream-file-preview";
 
 const planStepSchema = z.object({
   id: z.string(),
@@ -138,7 +144,7 @@ function readInputTokens(usage: LanguageModelUsage | undefined): number | undefi
   return undefined;
 }
 
-const RUNTIME_RULES = `You are a senior coding agent editing a pure-frontend virtual project previewed in the browser.
+const BASE_RUNTIME_RULES = `You are a senior coding agent working with a pure-frontend virtual project previewed in the browser.
 Bias: plan first, then implement with clean, cohesive, loosely-coupled code. Prefer clarity over cleverness.
 
 ## Stack (always true — do not invent another stack)
@@ -183,22 +189,49 @@ Bias: plan first, then implement with clean, cohesive, loosely-coupled code. Pre
   - DOM: \`(e: React.ChangeEvent<HTMLInputElement>) =>\`, \`(e: React.FormEvent<HTMLFormElement>) =>\`
   - Arrays: type the array or annotate \`(row: Student) =>\`
 - Prefer named types / interfaces for form state and list rows; avoid \`any\` and untyped destructuring.
-- After editing \`.ts\` / \`.tsx\`, call \`cli_execute\` \`sandbox.typecheck\` and fix errors (esp. TS7006) before finishing.
 
-## Sandbox / edits (Agent CLI)
-- Mutate files ONLY via \`cli_execute\` sandbox.* commands. \`index.html\` and \`package.json\` cannot be deleted.
-- Preferred call shape: \`{ command: "sandbox.replaceInFile", arguments: { path, oldString, newString } }\`. Flattened top-level fields are also accepted.
-- Prefer \`sandbox.replaceInFile\` for single-file edits. Use \`sandbox.applyOperations\` only for multi-file atomic batches; each op.type must be \`write\`| \`add\`| \`remove\`| \`replace\` (not writeFile/replaceInFile).
-- Explore progressively: sandbox.grep → sandbox.readFile(around=line) → only then full-file read if you must edit broadly.
-- Before writing UI, sandbox.readFile the target page and any \`src/components/ui/*\` you will import.
-- After edits, briefly confirm what changed (Chinese summary).
-- Do not guess command names — \`cli_search\` / \`cli_describe\` when unsure; on failure use \`cli_diagnose\`.
+## Agent CLI capability model
+- The host-loaded skills section in the current user prompt is authoritative for this run.
+- Conversation history describes prior work but never grants a current capability.
+- The \`cli_*\` meta-tools are stable; only commands registered by host-loaded skills are available behind them.
+- Never guess command names or assume a command exists. Call the meta-tools \`cli_search\` / \`cli_describe\` directly (they are not registry commands — never pass them as \`cli_execute.command\`).
+- Execute side effects only through registered commands with \`cli_execute\` (e.g. \`image.generate\`, \`sandbox.readFile\`); use meta-tool \`cli_diagnose\` after a failed execution.
+- If a required capability is not loaded, do not simulate it or claim success. Explain which skill the user must enable.`;
 
-## Persistence / Dynamic DB (Agent CLI)
-- Schema, seed, or admin CRUD: loadSkill("dynamic-db"), then \`cli_execute\` ddb.* (projectId is auto-bound).
-- Flow: cli_execute ddb.setupSchema → cli_execute ddb.codegen → cli_execute sandbox.readFile src/ddb/generated/index.ts (kindNames) → app code uses getDb() from src/lib/db.ts only.
-- Never curl/fetch Dynamic DB HTTP or hand-write a second DB client.
-${buildSkillsPromptSection()}`;
+const PLANNER_INSTRUCTIONS = `${BASE_RUNTIME_RULES}
+
+You are the Planner — think before coding. Call submitPlan exactly once. Do not write code.
+
+Planning discipline:
+1. Read the host-loaded skills, file list, UI components, and package.json. Plan only operations supported by loaded capabilities.
+2. Restate the goal in \`summary\`. Put architecture choices in \`approach\` (reuse vs new files, layering, coupling risks to avoid).
+3. Break work into 2–8 ordered steps. Each step: one cohesive concern, clear files/resources, and why.
+4. Order by dependency: types/lib → data/schema → components → pages/wiring → verification.
+5. Prefer extending existing modules over new parallel folders. Flag when a god file should be split — only if needed for this request.
+6. Keep the plan minimal: omit unrelated polish, renames, and speculative abstractions.
+7. Plan only against the Stack above (React 19 + TS + shadcn ui + Tailwind v4 + BrowserRouter) — never Next.js or other kits.
+8. If preview console errors are provided and the user wants fixes (or errors block the request), prioritize them when a loaded skill exposes the required diagnostics.`;
+
+const EXECUTOR_INSTRUCTIONS = `${BASE_RUNTIME_RULES}
+
+You are the Executor. Follow the plan and implement with clean, cohesive code. All project, data, and verification operations must use commands from host-loaded skills.
+
+Implementation style:
+- Honor \`approach\` and step boundaries: do not dump unrelated logic into one file.
+- Pages stay thin; extract reusable UI into components; keep pure helpers in src/lib.
+- Prefer surgical changes and match neighboring style (imports, naming, component patterns).
+- Do not perform drive-by refactors outside the plan.
+- If the plan is wrong given current state, adapt minimally and note the deviation in the final summary.
+
+Workflow:
+1. Read every host-loaded skill playbook that is relevant to the request.
+2. Discover commands progressively with \`cli_search\`; call \`cli_describe\` before using unfamiliar arguments.
+3. Re-read the smallest relevant current state before mutation, following the loaded skill's workflow.
+4. Execute only registered commands through \`cli_execute\`. Never substitute an unavailable shell, HTTP call, or hidden API.
+5. On failure, use \`cli_diagnose\` and follow structured recovery instead of blind retries.
+6. Run the verification commands supplied by loaded skills and fix relevant failures before finishing.
+7. If no loaded skill provides a required operation, stop that part and ask the user to enable the skill.
+8. When done, reply with a short Chinese summary: what changed, module split if any, and any plan deviations.`;
 
 function listUiComponents(sandbox: Sandbox): string[] {
   return sandbox
@@ -218,9 +251,9 @@ function projectContext(sandbox: Sandbox): string {
   return `Current files (${files.length}):\n${files.map((f) => `- ${f}`).join("\n")}\n\n${uiBlock}\n\npackage.json:\n${packageJson}`;
 }
 
-/** Fixed prompt overhead (instructions + project snapshot) — kept for diagnostics. */
+/** Fixed prompt overhead. Per-run skill playbooks intentionally stay outside this estimate. */
 export function estimateAgentFixedTokens(sandbox: Sandbox): number {
-  return estimateTextTokens(RUNTIME_RULES) + estimateTextTokens(projectContext(sandbox));
+  return estimateTextTokens(EXECUTOR_INSTRUCTIONS) + estimateTextTokens(projectContext(sandbox));
 }
 
 function collectChangedPaths(
@@ -267,7 +300,6 @@ const META_TOOL_TITLES: Record<string, string> = {
   cli_describe: "查看命令说明",
   cli_diagnose: "诊断失败",
   cli_execute: "执行命令",
-  loadSkill: "加载技能",
 };
 
 function cliExecuteArgs(input: unknown): Record<string, unknown> {
@@ -367,58 +399,6 @@ function isFileBodyTool(name: string, input?: unknown): boolean {
   return false;
 }
 
-/** Decode a JSON string value starting at `start` (first char after opening quote). */
-function decodeJsonStringValue(raw: string, start: number): string {
-  let i = start;
-  let out = "";
-  while (i < raw.length) {
-    const c = raw[i];
-    if (c === '"') break;
-    if (c === "\\") {
-      if (i + 1 >= raw.length) break;
-      const n = raw[i + 1];
-      if (n === "u") {
-        if (i + 5 >= raw.length) break;
-        const hex = raw.slice(i + 2, i + 6);
-        if (!/^[0-9a-fA-F]{4}$/.test(hex)) break;
-        out += String.fromCharCode(Number.parseInt(hex, 16));
-        i += 6;
-        continue;
-      }
-      const map: Record<string, string> = {
-        n: "\n",
-        r: "\r",
-        t: "\t",
-        '"': '"',
-        "\\": "\\",
-        "/": "/",
-      };
-      out += map[n] ?? n;
-      i += 2;
-      continue;
-    }
-    out += c;
-    i += 1;
-  }
-  return out;
-}
-
-function extractJsonStringField(raw: string, field: string): string | undefined {
-  const key = new RegExp(`"${field}"\\s*:\\s*"`).exec(raw);
-  if (!key || key.index == null) return undefined;
-  return decodeJsonStringValue(raw, key.index + key[0].length);
-}
-
-/** Pull path + body from partial tool-call JSON (write content / replace newString). */
-function extractStreamingFileFields(raw: string): { path?: string; content?: string } {
-  const path = extractJsonStringField(raw, "path");
-  const content =
-    extractJsonStringField(raw, "newString") ??
-    extractJsonStringField(raw, "content") ??
-    extractJsonStringField(raw, "oldString");
-  return { path, content };
-}
-
 function fileBodyToolPreview(name: string, input: unknown): { detail?: string; content?: string } {
   if (name === "cli_execute" && isFileBodyCliExecute(input) && input && typeof input === "object") {
     const args = cliExecuteArgs(input);
@@ -456,6 +436,8 @@ export async function runPlanExecutorAgent(
   options: {
     settings?: AiSettings;
     history?: AgentChatTurn[];
+    /** Skills explicitly selected in the composer for this run. */
+    skillIds: readonly SkillId[];
     /** Prior rolling summary from a previous agent turn. */
     conversationSummary?: string;
     previewErrors?: string[];
@@ -463,13 +445,16 @@ export async function runPlanExecutorAgent(
     previewConsole?: PreviewConsoleAccess;
     onProgress?: (event: AgentProgress) => void;
     abortSignal?: AbortSignal;
-  } = {},
+  },
 ): Promise<AgentResult> {
   const settings = options.settings ?? loadAiSettings();
   if (!isAiConfigured(settings)) {
     throw new Error("请先配置 API Base URL、API Key 和 Model。");
   }
 
+  const resolvedSkills = resolveSkills(options.skillIds);
+  const hasSandbox = resolvedSkills.activeIds.includes("sandbox");
+  const skillsPrompt = buildSkillsPromptSection(resolvedSkills);
   const model = createLanguageModel(settings);
   options.onProgress?.({ type: "compacting" });
   const preparedHistory = await prepareHistoryContext({
@@ -480,10 +465,15 @@ export async function runPlanExecutorAgent(
     abortSignal: options.abortSignal,
   });
   const historyBlock = preparedHistory.block;
-  const previewErrorBlock = formatPreviewErrors(options.previewErrors);
-  const before = new Set(sandbox.list());
+  const previewErrorBlock = hasSandbox ? formatPreviewErrors(options.previewErrors) : "";
+  const visibleProjectContext = hasSandbox
+    ? projectContext(sandbox)
+    : "Project context unavailable because the Sandbox skill is not loaded.";
+  const before = hasSandbox ? new Set(sandbox.list()) : new Set<string>();
   const snapshot = new Map<string, string>();
-  for (const path of before) snapshot.set(path, sandbox.read(path));
+  if (hasSandbox) {
+    for (const path of before) snapshot.set(path, sandbox.read(path));
+  }
 
   options.onProgress?.({ type: "planning" });
 
@@ -512,20 +502,8 @@ export async function runPlanExecutorAgent(
       }),
     },
     toolChoice: { type: "tool", toolName: "submitPlan" },
-    instructions: `${RUNTIME_RULES}
-
-You are the Planner — think before coding. Call submitPlan exactly once. Do not write code.
-
-Planning discipline:
-1. Read the file list, UI components, and package.json. Infer existing module boundaries and patterns.
-2. Restate the goal in \`summary\`. Put architecture choices in \`approach\` (reuse vs new files, layering, coupling risks to avoid).
-3. Break work into 2–8 ordered steps that map to Sandbox tool batches. Each step: one cohesive concern, clear files, and why.
-4. Order by dependency: types/lib → data/schema → components → pages/wiring → verify (typecheck / preview).
-5. Prefer extending existing modules over new parallel folders. Flag when a god file should be split — only if needed for this request.
-6. Keep the plan minimal: omit unrelated polish, renames, and speculative abstractions.
-7. Plan only against the Stack above (React 19 + TS + shadcn ui + Tailwind v4 + BrowserRouter) — never Next.js or other kits.
-8. If preview console errors are provided and the user wants fixes (or errors block the request), prioritize them. The executor can re-check with getPreviewErrors after edits.`,
-    prompt: `User request:\n${prompt}${historyBlock}${previewErrorBlock}\n\nProject context:\n${projectContext(sandbox)}`,
+    instructions: PLANNER_INSTRUCTIONS,
+    prompt: `${skillsPrompt}\n\nUser request:\n${prompt}${historyBlock}${previewErrorBlock}\n\nProject context:\n${visibleProjectContext}`,
   });
   reportUsage(planResult.usage);
 
@@ -545,14 +523,11 @@ Planning discipline:
     getErrors: () => options.previewErrors ?? [],
   };
   const agentCli = createAgentCliRuntime({
-    plugins: [sandboxPlugin, ddbPlugin],
+    plugins: resolvedSkills.plugins,
     context: { sandbox, previewConsole },
     signal: options.abortSignal,
   });
-  const tools = {
-    ...createSkillTools(),
-    ...createAgentCliTools(agentCli),
-  };
+  const tools = createAgentCliTools(agentCli);
   const commandTitle = (command: string) =>
     agentCli.registry.get(command)?.metadata.title;
   const toolTitle = (toolName: string, input?: unknown) =>
@@ -560,32 +535,7 @@ Planning discipline:
   const threshold = compactThreshold(settings.contextWindow);
   const executor = new ToolLoopAgent({
     model,
-    instructions: `${RUNTIME_RULES}
-
-You are the Executor. Follow the plan; implement with clean, cohesive code. File/DB/verify ops go through cli_* (sandbox.* / ddb.*). Use loadSkill for playbooks.
-
-Implementation style:
-- Honor \`approach\` and step boundaries: do not dump unrelated logic into one file.
-- Pages thin; extract reusable UI into components; keep pure helpers in src/lib.
-- Surgical diffs: cli_execute sandbox.replaceInFile for local edits; sandbox.writeFile/addFile only for new files or intentional full rewrites.
-- Match neighboring style (imports, naming, component patterns). No drive-by refactors outside the plan.
-- If the plan is wrong given what you read, adapt minimally and note the deviation in the final summary — do not balloon scope.
-
-Workflow:
-1. Progressive search before writing (do not dump whole files first):
-   a. Orient: cli_execute sandbox.listFiles or sandbox.grep outputMode=files with a keyword / symbol / glob.
-   b. Pin: sandbox.grep content (context=2) on promising paths — prefer word=true for identifiers; fuzzy=true if spelling unsure; regex=true for precise patterns.
-   c. Expand: for each relevant hit, sandbox.readFile(path, around=hit.line, radius=30–60). If still incomplete, widen radius or startLine/endLine; follow imports/symbols with another grep.
-   d. Commit context: only full-file sandbox.readFile when the file is small or you need the whole module to rewrite.
-   e. Windowed reads return \`LINE|…\` prefixes — strip them before sandbox.replaceInFile oldString/newString.
-   f. Before importing a UI primitive, confirm it is in the available components list (or add it under src/components/ui/).
-2. Prefer sandbox.replaceInFile for surgical edits; sandbox.writeFile/addFile for new or full rewrites.
-3. Use sandbox.applyOperations for multi-file atomic batches that must succeed together.
-4. Match existing import style (@/… with .tsx extensions, cn(), lucide-react, BrowserRouter). Annotate callback params under strict TS.
-5. Persistence: loadSkill dynamic-db → cli_execute ddb.setupSchema → cli_execute ddb.codegen → getDb() in app code. Use cli_search/cli_describe when unsure; cli_diagnose on failures.
-6. After .ts/.tsx edits: cli_execute sandbox.typecheck. If ok=false, fix diagnostics (especially TS7006 implicit any) and typecheck again before finishing.
-7. After UI/runtime-affecting edits (or when preview console errors were in the prompt): cli_execute sandbox.getPreviewErrors with wait=true. If ok=false, fix those lines and re-check before finishing.
-8. When done, reply with a short Chinese summary: what changed, module split if any, and any plan deviations.`,
+    instructions: EXECUTOR_INSTRUCTIONS,
     tools,
     stopWhen: isStepCount(40),
     // Prefer provider inputTokens when available; fall back to message-size estimate.
@@ -652,7 +602,7 @@ Workflow:
   // Re-read project after planning so executor sees any concurrent UI edits.
   const result = await executor.stream({
     abortSignal: options.abortSignal,
-    prompt: `User request:\n${prompt}${historyBlock}${previewErrorBlock}\n\n${planText}\n\nProject context:\n${projectContext(sandbox)}\n\nExecute the plan now.`,
+    prompt: `${skillsPrompt}\n\nUser request:\n${prompt}${historyBlock}${previewErrorBlock}\n\n${planText}\n\nProject context:\n${visibleProjectContext}\n\nExecute the plan now.`,
   });
 
   let reply = "";
@@ -670,21 +620,24 @@ Workflow:
     return META_TOOL_TITLES[toolName] ?? toolName;
   };
 
+  const streamingPreview = (toolName: string, raw: string) => {
+    if (toolName === "cli_execute" && isCliFileBodyRaw(raw)) {
+      return extractStreamingFileFields(raw);
+    }
+    if (isFileBodyTool(toolName)) return extractStreamingFileFields(raw);
+    return {
+      path:
+        extractJsonStringField(raw, "path") ??
+        extractJsonStringField(raw, "query"),
+    };
+  };
+
   const flushToolInputPreviews = () => {
     toolInputFlush = undefined;
     for (const id of dirtyToolInputs) {
       const entry = streamingToolArgs.get(id);
       if (!entry) continue;
-      const preview = isFileBodyTool(entry.name, undefined)
-        ? extractStreamingFileFields(entry.raw)
-        : entry.name === "cli_execute" &&
-            /sandbox\.(writeFile|addFile|replaceInFile)/.test(entry.raw)
-          ? extractStreamingFileFields(entry.raw)
-          : {
-              path:
-                extractJsonStringField(entry.raw, "path") ??
-                extractJsonStringField(entry.raw, "query"),
-            };
+      const preview = streamingPreview(entry.name, entry.raw);
       options.onProgress?.({
         type: "tool",
         tool: {
@@ -746,13 +699,7 @@ Workflow:
         flushToolInputPreviews();
         const ended = streamingToolArgs.get(part.id);
         if (ended) {
-          const preview = isFileBodyTool(ended.name)
-            ? extractStreamingFileFields(ended.raw)
-            : {
-                path:
-                  extractJsonStringField(ended.raw, "path") ??
-                  extractJsonStringField(ended.raw, "query"),
-              };
+          const preview = streamingPreview(ended.name, ended.raw);
           options.onProgress?.({
             type: "tool",
             tool: {
@@ -788,7 +735,7 @@ Workflow:
   return {
     reply: reply.trim() || plan.summary,
     reasoning: reasoning.trim(),
-    changed: collectChangedPaths(sandbox, before, snapshot),
+    changed: hasSandbox ? collectChangedPaths(sandbox, before, snapshot) : [],
     plan,
     conversationSummary: preparedHistory.summary,
     usage: peakInputTokens > 0 ? { inputTokens: peakInputTokens } : undefined,

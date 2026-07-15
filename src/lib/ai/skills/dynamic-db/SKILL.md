@@ -1,9 +1,11 @@
 # Dynamic DB
 
-## 何时 load
+## 适用场景
 
 - 用户要持久化、CRUD、列表、表单数据、表/集合
-- 消息含 `/skill dynamic-db`
+- 用户要定义或迁移 Dynamic DB schema、生成类型、写入 seed/demo 数据
+
+本技能由宿主在发送时加载，并依赖 Sandbox。所有数据库管理操作都必须通过 `cli_*` 调度 `ddb.*` 命令。
 
 ## Role split（两层分工 — 强制）
 
@@ -20,7 +22,7 @@
 
 ## Agent CLI 调度
 
-1. 不确定命令名 → `cli_search`（如 query: `"schema setup"`）
+1. 不确定命令名 → 直接调 meta-tool `cli_search`（如 `{ "query": "schema setup" }`）；不要把 `cli_search` 当作 `cli_execute.command`
 2. 不确定参数 → `cli_describe`（command: `ddb.setupSchema`）
 3. 执行 → `cli_execute`（command + JSON arguments）
 4. 失败 → `cli_diagnose`（executionId）按结构化 recovery 处理

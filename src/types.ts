@@ -45,6 +45,8 @@ export type ChatTimelinePart =
 export type ChatMessage = {
   role: "user" | "assistant";
   text: string;
+  /** Effective skills loaded for this user turn, including resolved dependencies. */
+  skillIds?: string[];
   changed?: string[];
   plan?: {
     summary: string;

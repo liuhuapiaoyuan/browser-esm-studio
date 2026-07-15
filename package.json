@@ -12,10 +12,11 @@
     "test:sandbox": "bun scripts/smoke-sandbox.mjs",
     "test:preview": "bun scripts/smoke-preview.mjs && bun scripts/smoke-preview-console.mjs",
     "test:typecheck": "bun scripts/smoke-typecheck.mjs",
+    "test:skills": "bun scripts/smoke-skills.mjs",
     "test:agent-ui": "bun scripts/smoke-agent-ui.mjs",
     "test:ddb": "bun scripts/smoke-ddb.mjs",
     "test:agent-cli": "bun scripts/smoke-agent-cli.mjs",
-    "test": "bun run test:sandbox && bun run test:preview && bun run test:typecheck && bun run test:agent-ui && bun run test:ddb && bun run test:agent-cli",
+    "test": "bun run test:sandbox && bun run test:preview && bun run test:typecheck && bun run test:skills && bun run test:agent-ui && bun run test:ddb && bun run test:agent-cli",
     "postinstall": "bun run build:runtime"
   },
   "dependencies": {
