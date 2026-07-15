@@ -42,6 +42,7 @@ const files = {
   "src/main.tsx": "import { createRoot } from 'react-dom/client';\nimport { App } from './App.tsx';\nimport './styles.css';\ncreateRoot(document.getElementById('root')!).render(<App />);",
   "src/App.tsx": "export function App() { const label: string = 'hello'; return <h1>{label}</h1>; }",
   "src/styles.css": "body { color: rebeccapurple; }",
+  "src/load-json.ts": "import pkg from '../package.json';\nexport const reactVersion = pkg.dependencies?.react ?? 'none';",
 };
 
 await new Promise((resolve, reject) => {
@@ -76,6 +77,9 @@ assert.match(htmlSource, /__PREVIEW_BASENAME__/);
 assert.match(htmlSource, /unhandledrejection/);
 assert.match(htmlSource, /window\.onerror/);
 assert.match(htmlSource, /addEventListener\("error"/);
+assert.match(htmlSource, /checkSvgAttribute/);
+assert.match(htmlSource, /Element\.prototype\.setAttribute/);
+assert.match(htmlSource, /reportError/);
 
 // SPA fallback: client route refresh serves index.html (BrowserRouter deep link)
 const spaNav = await request("/__preview__/test/gomoku", {
@@ -243,5 +247,48 @@ assert.equal(broken.headers.get("content-type"), "text/javascript; charset=utf-8
 const brokenSource = await broken.text();
 assert.match(brokenSource, /^throw new Error\(/);
 assert.match(brokenSource, /转译失败|Unexpected token/);
+
+// Transpiled TS rewrites JSON imports (same mechanism as CSS ?__preview_css__).
+const jsonImporter = await request("/__preview__/test/src/load-json.ts");
+const jsonImporterSource = await jsonImporter.text();
+assert.match(jsonImporterSource, /package\.json\?__preview_json__/);
+
+// JSON module via rewritten query param — no Sec-Fetch-Dest required.
+const jsonViaTag = await request("/__preview__/test/package.json?__preview_json__");
+assert.equal(jsonViaTag.status, 200);
+assert.equal(jsonViaTag.headers.get("content-type"), "text/javascript; charset=utf-8");
+assert.match(await jsonViaTag.text(), /^export default /);
+
+// Module script fetch of JSON is transpiled to a JS default export (Vite-style).
+const jsonAsModule = await request("/__preview__/test/package.json", {
+  headers: { "Sec-Fetch-Dest": "script" },
+});
+assert.equal(jsonAsModule.status, 200);
+assert.equal(jsonAsModule.headers.get("content-type"), "text/javascript; charset=utf-8");
+const jsonAsModuleSource = await jsonAsModule.text();
+assert.match(jsonAsModuleSource, /^export default /);
+assert.match(jsonAsModuleSource, /"react":"\^19\.1\.0"/);
+
+const jsonAsRawModule = await request("/__preview__/test/package.json?raw", {
+  headers: { "Sec-Fetch-Dest": "script" },
+});
+assert.equal(jsonAsRawModule.status, 200);
+assert.match(await jsonAsRawModule.text(), /^export default "{\\"dependencies\\"/);
+
+// Normal JSON fetch still returns JSON.
+const jsonFetch = await request("/__preview__/test/package.json");
+assert.equal(jsonFetch.status, 200);
+assert.match(jsonFetch.headers.get("content-type") || "", /application\/json/);
+
+// Missing module for <script type=module> becomes an executable throw (precise Preview error).
+const missingModuleScript = await request("/__preview__/test/missing-file.js", {
+  headers: { "Sec-Fetch-Dest": "script" },
+});
+assert.equal(missingModuleScript.status, 200);
+assert.equal(missingModuleScript.headers.get("content-type"), "text/javascript; charset=utf-8");
+assert.match(await missingModuleScript.text(), /Virtual file not found: missing-file\.js/);
+
+assert.match(htmlSource, /Failed to load module script/);
+assert.match(htmlSource, /describeFailedScript/);
 
 console.log("Preview runtime smoke test passed.");

@@ -1,4 +1,4 @@
-const CACHE_NAME = "browser-esm-studio-v3";
+const CACHE_NAME = "browser-esm-studio-v4";
 const PREVIEW_PREFIX = "/__preview__/";
 const SOURCE_PREFIX = "/__preview_source__/";
 const SUCRASE_URL = "/sucrase.browser.js";
@@ -386,6 +386,33 @@ function prepareTailwindCss(source) {
     .trim();
 }
 
+function isScriptModuleRequest(request) {
+  const dest = request.headers.get("Sec-Fetch-Dest") || "";
+  return dest === "script" || dest === "worker" || dest === "sharedworker" ||
+    dest === "audioworklet" || dest === "paintworklet";
+}
+
+function isJavaScriptMime(contentType) {
+  const type = String(contentType || "").split(";")[0].trim().toLowerCase();
+  return type === "text/javascript" || type === "application/javascript" ||
+    type === "application/ecmascript" || type === "text/ecmascript" ||
+    type === "application/wasm";
+}
+
+function moduleLoadErrorResponse(message) {
+  return new Response(`throw new Error(${JSON.stringify(message)});`, {
+    status: 200,
+    headers: responseHeaders("text/javascript; charset=utf-8"),
+  });
+}
+
+function mimeModuleLoadError(requestedPath, contentType) {
+  const mime = String(contentType || "unknown").split(";")[0].trim() || "unknown";
+  return moduleLoadErrorResponse(
+    `Failed to load module script: Expected a JavaScript-or-Wasm module script but the server responded with a MIME type of "${mime}" (${requestedPath}).`,
+  );
+}
+
 function bridgeScript() {
   return `<script>
   (() => {
@@ -406,23 +433,124 @@ function bridgeScript() {
       }
       try { return String(value); } catch (_) { return "[unserializable]"; }
     };
-    const forwardError = (message, stack) => {
-      send("error", { message: message || "Unknown error", stack: stack || "" });
+    const isGenericScriptError = (value) => {
+      const text = String(value || "").trim();
+      return !text || /^Script error\\.?$/i.test(text);
     };
-    for (const level of ["log", "info", "warn", "error", "debug"]) {
-      const original = console[level] ? console[level].bind(console) : null;
-      console[level] = (...args) => {
-        try { original?.(...args); } catch (_) {}
-        const mapped = level === "debug" ? "log" : level;
+    const recentErrors = new Map();
+    const forwardError = (message, stack) => {
+      const msg = message || "Unknown error";
+      const key = msg + "\\0" + (stack || "");
+      const now = Date.now();
+      const last = recentErrors.get(key) || 0;
+      if (now - last < 800) return;
+      recentErrors.set(key, now);
+      if (recentErrors.size > 40) {
+        for (const [entryKey, at] of recentErrors) {
+          if (now - at > 2000) recentErrors.delete(entryKey);
+        }
+      }
+      send("error", { message: msg, stack: stack || "" });
+    };
+    const describeFailedScript = async (url) => {
+      if (!url) return "Failed to load module script (unknown URL).";
+      try {
+        const res = await fetch(url, { method: "GET", cache: "no-store", credentials: "same-origin" });
+        const ct = (res.headers.get("content-type") || "").split(";")[0].trim() || "unknown";
+        if (!/javascript|ecmascript|wasm/i.test(ct)) {
+          return "Failed to load module script: Expected a JavaScript-or-Wasm module script but the server responded with a MIME type of \\"" + ct + "\\" (" + url + ").";
+        }
+        if (!res.ok) return "Failed to load module script: " + url + " (HTTP " + res.status + ").";
+        return "Failed to load module script: " + url;
+      } catch (_) {
+        return "Failed to load module script: " + url;
+      }
+    };
+    const patchConsoleLevel = (level) => {
+      const mapped = level === "debug" ? "log" : level;
+      const proto = typeof Console !== "undefined" ? Console.prototype : Object.getPrototypeOf(console);
+      const original = (proto[level] || console[level])?.bind(console);
+      if (!original) return;
+      const forward = (...args) => {
         send("console", { level: mapped, args: args.map(normalize) });
       };
+      const wrapped = (...args) => {
+        try { original(...args); } catch (_) {}
+        forward(...args);
+      };
+      proto[level] = wrapped;
+      console[level] = wrapped;
+    };
+    for (const level of ["log", "info", "warn", "error", "debug"]) patchConsoleLevel(level);
+    if (typeof globalThis.reportError === "function") {
+      const prevReportError = globalThis.reportError.bind(globalThis);
+      globalThis.reportError = (error) => {
+        forwardError(normalize(error), error && error.stack ? error.stack : "");
+        return prevReportError(error);
+      };
     }
+    const captureStack = () => {
+      try { throw new Error(); } catch (error) { return error.stack || ""; }
+    };
+    const previewDomValue = (value, max = 24) => {
+      const text = String(value ?? "");
+      return text.length > max ? text.slice(0, max) + " …" : text;
+    };
+    const reportDomValidation = (message, stack) => {
+      forwardError(message, stack || captureStack());
+    };
+    const checkSvgAttribute = (el, name, value, stack) => {
+      if (!(el instanceof Element) || el.namespaceURI !== "http://www.w3.org/2000/svg") return;
+      const attr = String(name || "").includes(":") ? String(name).split(":").pop() : String(name || "");
+      const text = String(value ?? "");
+      const tag = el.localName || "element";
+      // Chrome logs these natively in DevTools but never calls console.error — mirror them for the host.
+      if ((attr === "d" || attr === "points") && /%/.test(text)) {
+        reportDomValidation(
+          'Error: <' + tag + '> attribute ' + attr + ': Expected number, "' + previewDomValue(text) + '".',
+          stack,
+        );
+      }
+    };
+    const nativeSetAttribute = Element.prototype.setAttribute;
+    Element.prototype.setAttribute = function setAttribute(name, value) {
+      const stack = captureStack();
+      nativeSetAttribute.call(this, name, value);
+      checkSvgAttribute(this, name, value, stack);
+    };
+    const nativeSetAttributeNS = Element.prototype.setAttributeNS;
+    Element.prototype.setAttributeNS = function setAttributeNS(ns, name, value) {
+      const stack = captureStack();
+      nativeSetAttributeNS.call(this, ns, name, value);
+      checkSvgAttribute(this, name, value, stack);
+    };
     // Capture phase so we still see errors stopped by other listeners / frameworks.
+    // Browser MIME/module-load failures often surface only as "Script error." — enrich them.
     addEventListener("error", (event) => {
-      const msg = event.error?.message || event.message ||
-        (event.filename ? ("Resource/script error at " + event.filename) : "Script error");
-      const stack = event.error?.stack ||
+      const target = event.target;
+      const tag = target && target.tagName ? String(target.tagName).toUpperCase() : "";
+      if (tag === "SCRIPT" || tag === "LINK") {
+        const url = target.src || target.href || event.filename || "";
+        describeFailedScript(url).then((detail) => forwardError(detail, url));
+        return;
+      }
+      if (tag === "IMG") {
+        const url = target.currentSrc || target.src || event.filename || "";
+        forwardError("Failed to load image: " + url, url);
+        return;
+      }
+      const raw = (event.error && event.error.message) || event.message || "";
+      const msg = isGenericScriptError(raw)
+        ? (event.filename
+          ? ("Failed to load module script: " + event.filename)
+          : "Script error")
+        : raw;
+      const stack = (event.error && event.error.stack) ||
         (event.filename ? (event.filename + ":" + event.lineno + ":" + event.colno) : "");
+      if (isGenericScriptError(raw) && event.filename) {
+        describeFailedScript(event.filename).then((detail) => forwardError(detail, stack));
+        return;
+      }
       forwardError(msg, stack);
     }, true);
     addEventListener("unhandledrejection", (event) => {
@@ -431,8 +559,20 @@ function bridgeScript() {
     }, true);
     const prevOnError = window.onerror;
     window.onerror = (message, source, lineno, colno, error) => {
+      const raw = (error && error.message) || String(message);
+      if (isGenericScriptError(raw)) {
+        // Resource <script> handler (capture) may already report a precise MIME/HTTP message;
+        // forwardError dedupes near-identical payloads within 800ms.
+        if (source) {
+          describeFailedScript(source).then((detail) => {
+            forwardError(detail, source + ":" + lineno + ":" + colno);
+          });
+        }
+        if (typeof prevOnError === "function") return prevOnError(message, source, lineno, colno, error);
+        return false;
+      }
       forwardError(
-        (error && error.message) || String(message),
+        raw,
         (error && error.stack) || (source ? (source + ":" + lineno + ":" + colno) : ""),
       );
       if (typeof prevOnError === "function") return prevOnError(message, source, lineno, colno, error);
@@ -564,7 +704,7 @@ async function transformHtml(sessionId, source) {
   const base = `<base href="${PREVIEW_PREFIX}${encodeURIComponent(sessionId)}/">`;
   const importMap = `<script type="importmap">${JSON.stringify({ imports })}</script>`;
   const tailwindScript = useTailwind ? TAILWIND_BROWSER_SCRIPT : "";
-  const injection = `${base}${importMap}${tailwindScript}${bridgeScript()}`;
+  const injection = `${base}${bridgeScript()}${importMap}${tailwindScript}`;
   const html = rewriteRootAbsoluteUrls(source);
 
   if (/<head(?:\s[^>]*)?>/i.test(html)) {
@@ -579,6 +719,22 @@ function rewriteCssImports(source) {
   return source
     .replace(staticImport, (_, prefix, quote, specifier) => `${prefix}${quote}${specifier}?__preview_css__${quote}`)
     .replace(dynamicImport, (_, prefix, quote, specifier, _closingQuote, suffix) => `${prefix}${quote}${specifier}?__preview_css__${quote}${suffix}`);
+}
+
+function tagJsonImportSpecifier(specifier) {
+  if (specifier.includes("__preview_json__")) return specifier;
+  const join = specifier.includes("?") ? "&" : "?";
+  return `${specifier}${join}__preview_json__`;
+}
+
+function rewriteJsonImports(source) {
+  const staticImport = /(\b(?:import|export)\s+(?:[^'";]*?\s+from\s*)?)(["'])([^"']+\.json(?:\?[^"']*)?)(\2)/g;
+  const dynamicImport = /(\bimport\s*\(\s*)(["'])([^"']+\.json(?:\?[^"']*)?)(\2)(\s*\))/g;
+  return source
+    .replace(staticImport, (_, prefix, quote, specifier) =>
+      `${prefix}${quote}${tagJsonImportSpecifier(specifier)}${quote}`)
+    .replace(dynamicImport, (_, prefix, quote, specifier, _closingQuote, suffix) =>
+      `${prefix}${quote}${tagJsonImportSpecifier(specifier)}${quote}${suffix}`);
 }
 
 function cssModule(source, path) {
@@ -597,6 +753,12 @@ style.textContent = css;
 export default css;`;
 }
 
+/** Vite-style JSON modules: default export parsed value, or raw string with ?raw. */
+function jsonModule(source, { raw = false } = {}) {
+  if (raw) return `export default ${JSON.stringify(source)};`;
+  return `export default ${JSON.stringify(JSON.parse(source))};`;
+}
+
 async function serveIndexHtml(sessionId) {
   const index = await readSource(sessionId, "index.html");
   if (!index) return null;
@@ -609,6 +771,7 @@ async function handlePreviewRequest(url, request) {
   const slash = remainder.indexOf("/");
   const sessionId = slash === -1 ? remainder : remainder.slice(0, slash);
   const requestedPath = cleanPath(slash === -1 ? "index.html" : remainder.slice(slash + 1)) || "index.html";
+  const asModule = isScriptModuleRequest(request);
 
   try {
     const file = await readSource(sessionId, requestedPath);
@@ -618,6 +781,10 @@ async function handlePreviewRequest(url, request) {
       if (isSpaRoutePath(requestedPath) && isDocumentRequest(request)) {
         const spa = await serveIndexHtml(sessionId);
         if (spa) return spa;
+      }
+      // Script/module fetches must not get text/plain or JSON — that becomes "Script error."
+      if (asModule) {
+        return moduleLoadErrorResponse(`Virtual file not found: ${requestedPath}`);
       }
       return new Response(`Virtual file not found: ${requestedPath}`, {
         status: 404,
@@ -634,11 +801,25 @@ async function handlePreviewRequest(url, request) {
       const reactVersion = packageReactVersion(packageFile?.source || "{}");
       source = await transpileModule(source, file.path, reactVersion);
       source = rewriteCssImports(source);
+      source = rewriteJsonImports(source);
       type = "text/javascript; charset=utf-8";
     }
     if (url.searchParams.has("__preview_css__") && file.path.endsWith(".css")) {
       source = cssModule(source, file.path);
       type = "text/javascript; charset=utf-8";
+    }
+    const jsonAsModule =
+      file.path.endsWith(".json") &&
+      (url.searchParams.has("__preview_json__") || asModule);
+    if (jsonAsModule) {
+      source = jsonModule(source, { raw: url.searchParams.has("raw") });
+      type = "text/javascript; charset=utf-8";
+    }
+
+    // Browser rejects non-JS MIME for module scripts and only exposes "Script error." to JS.
+    // Convert to an executable throw so getPreviewErrors sees the real MIME reason.
+    if (asModule && !isJavaScriptMime(type)) {
+      return mimeModuleLoadError(requestedPath, type);
     }
 
     return new Response(source, { headers: responseHeaders(type) });
@@ -647,11 +828,8 @@ async function handlePreviewRequest(url, request) {
     // Return executable JS so the iframe loads the module, throws, and the bridge
     // forwards the real transpile/runtime message into the host console.
     // Plain-text 500 bodies are swallowed as MIME/module load failures.
-    if (!/\.(?:html|css|json|svg|txt|md)$/i.test(requestedPath)) {
-      return new Response(`throw new Error(${JSON.stringify(message)});`, {
-        status: 200,
-        headers: responseHeaders("text/javascript; charset=utf-8"),
-      });
+    if (asModule || !/\.(?:html|css|json|svg|txt|md)$/i.test(requestedPath)) {
+      return moduleLoadErrorResponse(message);
     }
     return new Response(message, {
       status: 500,

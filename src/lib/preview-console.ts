@@ -61,8 +61,15 @@ export function createPreviewConsole() {
     }
 
     if (data.type === "error") {
-      const message = data.payload?.stack || data.payload?.message || "Unknown error";
-      push("error", message);
+      const message = (data.payload?.message || "").trim();
+      const stack = (data.payload?.stack || "").trim();
+      // Real Error.stack is multi-line and already includes message; location-only
+      // stacks (URL / file:line:col) must not hide the enriched MIME text.
+      let text = message || stack || "Unknown error";
+      if (stack && message && stack.includes(message)) text = stack;
+      else if (stack && message && stack.includes("\n")) text = `${message}\n${stack}`;
+      else if (stack && !message) text = stack;
+      push("error", text);
       return true;
     }
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { AgentResponse } from "./components/ai-elements/agent-response";
-import { SkillPicker, snapshotSkillIds } from "./components/skill-picker";
+import { SkillPicker, snapshotSkillIds, updateRequestedSkillIds } from "./components/skill-picker";
 import { DEFAULT_FILES } from "./defaultProject";
 import { AGENT_SUGGESTIONS, formatAgentError, runPlanExecutorAgent, type AgentProgress } from "./lib/ai/agent";
 import { requestAgentNotifyPermission, runAgentHooks } from "./lib/ai/hooks";
@@ -9,6 +9,13 @@ import { defaultSkillIds, listSkills, resolveSkills, type SkillId } from "./lib/
 import { buildFileTree, fileLanguage, normalizePath, type TreeNode } from "./lib/path";
 import { previewUrl, syncPreviewProject } from "./lib/preview";
 import { createPreviewConsole } from "./lib/preview-console";
+import {
+  buildReferencePath,
+  importReferenceHtml,
+  isHtmlReferenceName,
+  listReferenceHtmlPaths,
+  REFERENCE_SIZE_WARN_BYTES,
+} from "./lib/reference-html";
 import { createSandbox, SandboxError, type Sandbox } from "./lib/sandbox";
 import {
   ensureDdbProject,
@@ -54,6 +61,7 @@ const ICONS = {
   external: ["M14 4h6v6", "m20 4-9 9", "M18 13v7H4V6h7"],
   check: ["M5 12l4 4L19 6"],
   settings: ["M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z", "M19.4 13.1a1.5 1.5 0 0 0 .1-1.2l1.1-.9-1.2-2.1-1.4.3a5.8 5.8 0 0 0-1-.6l-.2-1.4h-2.4l-.2 1.4a5.8 5.8 0 0 0-1 .6l-1.4-.3-1.2 2.1 1.1.9a1.5 1.5 0 0 0 .1 1.2l-1.1.9 1.2 2.1 1.4-.3a5.8 5.8 0 0 0 1 .6l.2 1.4h2.4l.2-1.4a5.8 5.8 0 0 0 1-.6l1.4.3 1.2-2.1-1.1-.9Z"],
+  paperclip: ["M21.4 11.6 12.1 20.9a5.5 5.5 0 0 1-7.8-7.8l9.9-9.9a3.5 3.5 0 0 1 5 5l-9.9 9.9a1.5 1.5 0 0 1-2.1-2.1l8.5-8.5"],
 } as const;
 
 type IconName = keyof typeof ICONS;
@@ -321,7 +329,14 @@ function ChatPanel({
     () => resolveSkills(requestedSkillIds),
     [requestedSkillIds],
   );
+  const [filesTick, setFilesTick] = useState(0);
+  useEffect(() => sandbox.subscribe(() => setFilesTick((value) => value + 1)), [sandbox]);
+  const referencePaths = useMemo(
+    () => listReferenceHtmlPaths(sandbox),
+    [sandbox, filesTick],
+  );
   const scrollRef = useRef<HTMLDivElement>(null);
+  const referenceInputRef = useRef<HTMLInputElement>(null);
   const stickToBottomRef = useRef(true);
   const abortRef = useRef<AbortController | null>(null);
   const workingRef = useRef(false);
@@ -330,6 +345,59 @@ function ChatPanel({
   /** Latest provider-reported prompt tokens (from AI SDK usage.inputTokens). */
   const [contextUsed, setContextUsed] = useState(0);
   const configured = isAiConfigured(settings);
+
+  async function importReferenceFiles(fileList: FileList | null) {
+    if (!fileList?.length || workingRef.current) return;
+    const imported: string[] = [];
+
+    for (const file of Array.from(fileList)) {
+      if (!isHtmlReferenceName(file.name)) {
+        window.alert(`跳过 ${file.name}：仅支持 .html / .htm`);
+        continue;
+      }
+      if (file.size > REFERENCE_SIZE_WARN_BYTES) {
+        const kb = Math.round(file.size / 1024);
+        if (
+          !window.confirm(
+            `${file.name} 约 ${kb}KB，写入后可能接近浏览器本地存储上限。仍要导入？`,
+          )
+        ) {
+          continue;
+        }
+      }
+
+      const content = await file.text();
+      const path = buildReferencePath(file.name);
+      const overwrite = sandbox.exists(path)
+        ? window.confirm(`${path} 已存在，是否覆盖？`)
+        : true;
+      if (sandbox.exists(path) && !overwrite) continue;
+
+      const result = importReferenceHtml(sandbox, file.name, content, { overwrite: true });
+      if (!result.ok) {
+        window.alert(result.error);
+        continue;
+      }
+      imported.push(result.path);
+    }
+
+    if (referenceInputRef.current) referenceInputRef.current.value = "";
+    if (!imported.length) return;
+
+    setRequestedSkillIds((current) =>
+      updateRequestedSkillIds(AGENT_SKILLS, current, "interactive-quest", true),
+    );
+    setMessages((current) => [
+      ...current,
+      {
+        role: "assistant",
+        text: `已导入参考 HTML：\n${imported.map((path) => `- \`${path}\``).join("\n")}\n\n已启用「${SKILL_TITLE_BY_ID.get("interactive-quest") ?? "参考仿作"}」。发送需求即可按参考页面仿作同类互动（请勿让我全文朗读该文件）。`,
+      },
+    ]);
+    if (!prompt.trim() && imported.length === 1) {
+      setPrompt(`请参考 ${imported[0]}，仿作一版同类闯关互动页面。`);
+    }
+  }
 
   function onMessagesScroll() {
     const el = scrollRef.current;
@@ -757,21 +825,68 @@ function ChatPanel({
           ))}
         </div>
         <form className="composer" onSubmit={(event) => submit(event)}>
-          <SkillPicker
-            skills={AGENT_SKILLS}
-            requestedIds={requestedSkillIds}
-            activeIds={resolvedSkills.activeIds}
-            requiredBy={resolvedSkills.requiredBy}
-            disabled={working}
-            onChange={setRequestedSkillIds}
-          />
+          <div className="composer-toolbar">
+            <SkillPicker
+              skills={AGENT_SKILLS}
+              requestedIds={requestedSkillIds}
+              activeIds={resolvedSkills.activeIds}
+              requiredBy={resolvedSkills.requiredBy}
+              disabled={working}
+              onChange={setRequestedSkillIds}
+            />
+            <input
+              ref={referenceInputRef}
+              type="file"
+              accept=".html,.htm,text/html"
+              multiple
+              hidden
+              onChange={(event) => {
+                void importReferenceFiles(event.target.files);
+              }}
+            />
+            <button
+              type="button"
+              className="reference-upload-button"
+              disabled={working}
+              title="上传参考 HTML 到 references/"
+              aria-label="上传参考 HTML"
+              onClick={() => referenceInputRef.current?.click()}
+            >
+              <Icon name="paperclip" size={14} />
+              参考
+            </button>
+          </div>
+          {referencePaths.length ? (
+            <div className="reference-chips" aria-label="已导入的参考 HTML">
+              {referencePaths.map((path) => (
+                <span key={path} title={path}>
+                  {path.replace(/^references\//, "")}
+                  <button
+                    type="button"
+                    aria-label={`删除 ${path}`}
+                    disabled={working}
+                    onClick={() => {
+                      if (!window.confirm(`删除参考文件 ${path}？`)) return;
+                      try {
+                        sandbox.remove(path);
+                      } catch (error) {
+                        window.alert(error instanceof Error ? error.message : String(error));
+                      }
+                    }}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          ) : null}
           <textarea
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) submit(event);
             }}
-            placeholder="描述你想构建或修改的内容…"
+            placeholder="描述你想构建或修改的内容…（可先点「参考」上传 HTML）"
             rows={3}
           />
           <div className="composer-actions">
@@ -951,7 +1066,6 @@ function PreviewPane({
       {showConsole && <RuntimeConsole logs={logs} onClear={onClearLogs} onClose={onToggleConsole} onFixError={onFixError} />}
       <div className="preview-footer">
         <button className={`console-toggle ${logs.some((item) => item.level === "error") ? "has-error" : ""}`} onClick={onToggleConsole}><Icon name="terminal" size={14} />控制台 {logs.length > 0 && <i>{logs.length}</i>}</button>
-        <span className="preview-engine">Service Worker · TypeScript · 原生 ESM · esm.sh</span>
       </div>
     </section>
   );
@@ -1042,7 +1156,16 @@ export function App() {
   }, [sandbox, previewConsole]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(files));
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(files));
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : String(error);
+      previewConsole.push(
+        "error",
+        `项目过大，无法写入本地存储（可删除 references/ 下的大 HTML 后重试）：${message}`,
+      );
+    }
     setRuntimeStatus("syncing");
     previewConsole.markDirty();
     const timer = window.setTimeout(() => {

@@ -95,7 +95,7 @@ export async function ensurePreviewRuntime(): Promise<ServiceWorkerRegistration>
 
   if (!registrationPromise) {
     registrationPromise = navigator.serviceWorker
-      .register("/preview-sw.js", { scope: "/" })
+      .register("/preview-sw.js?v=4", { scope: "/" })
       .then(async (registration) => {
         try {
           await registration.update();

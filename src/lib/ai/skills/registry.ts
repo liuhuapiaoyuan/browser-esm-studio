@@ -3,6 +3,8 @@ import { imagePlugin } from "../../agent-cli/plugins/image";
 import { sandboxPlugin } from "../../agent-cli/plugins/sandbox";
 import type { AiSkill, ResolvedSkills, SkillId, SkillSummary } from "./types";
 import dynamicDbSkill from "./dynamic-db/SKILL.md?raw";
+import interactiveQuestSkill from "./interactive-quest/SKILL.md?raw";
+import questLearningSkill from "./quest-learning/SKILL.md?raw";
 import liteImageSkill from "./lite-image/SKILL.md?raw";
 import sandboxSkill from "./sandbox/SKILL.md?raw";
 
@@ -11,8 +13,8 @@ export type { AiSkill, ResolvedSkills, SkillId, SkillSummary };
 const SKILLS: AiSkill[] = [
   {
     id: "sandbox",
-    title: "Sandbox",
-    description: "读取、搜索、修改虚拟项目文件，并执行类型检查与 Preview 错误检查",
+    title: "课件编辑",
+    description: "让 AI 自动编写、修改互动页面，并在右侧实时预览效果。制作任何课件都需要启用。",
     body: sandboxSkill,
     plugins: [sandboxPlugin],
     requires: [],
@@ -20,9 +22,8 @@ const SKILLS: AiSkill[] = [
   },
   {
     id: "dynamic-db",
-    title: "Dynamic DB",
-    description:
-      "Dynamic DB：schema/seed 用 cli_execute ddb.*；业务 CRUD 用 getDb()；setupSchema → codegen → kindNames",
+    title: "学习数据",
+    description: "为课件添加题库、答题记录、闯关进度等数据存储，适合需要保存学生学习结果的应用。",
     body: dynamicDbSkill,
     plugins: [ddbPlugin],
     requires: ["sandbox"],
@@ -30,13 +31,32 @@ const SKILLS: AiSkill[] = [
   },
   {
     id: "lite-image",
-    title: "Lite Image",
-    description:
-      "文生图 / 图生图：cli_execute image.generate → sandbox 仅存 path→URL 映射（经 /lite-image-proxy）",
+    title: "AI 配图",
+    description: "根据文字描述自动生成插图、背景图和关卡图标，让课件画面更生动、风格更统一。",
     body: liteImageSkill,
     plugins: [imagePlugin],
     requires: ["sandbox"],
     defaultEnabled: true,
+  },
+  {
+    id: "interactive-quest",
+    title: "参考仿作",
+    description:
+      "上传已有的 HTML 互动页面作为参考，AI 会仿照其玩法与界面，重新编写你的教学内容并配图。适合单元作文互动、选关地图仿作等场景。",
+    body: interactiveQuestSkill,
+    plugins: [],
+    requires: ["sandbox", "lite-image"],
+    defaultEnabled: false,
+  },
+  {
+    id: "quest-learning",
+    title: "地图闯关",
+    description:
+      "从零制作地图选关式闯关学习：封面、冒险地图、逐关答题、锦囊提示、奖励与进度。适合单元复习、知识闯关、作文闯关。",
+    body: questLearningSkill,
+    plugins: [],
+    requires: ["sandbox", "lite-image"],
+    defaultEnabled: false,
   },
 ];
 

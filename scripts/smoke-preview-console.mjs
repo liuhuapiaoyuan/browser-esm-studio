@@ -65,4 +65,17 @@ assert.equal(previewConsole.endSync(t1), false);
 const t2 = previewConsole.beginSync();
 assert.equal(previewConsole.endSync(t2), true);
 
+previewConsole.handleMessage({
+  source: "browser-esm-preview",
+  type: "error",
+  payload: {
+    message: 'Failed to load module script: Expected a JavaScript-or-Wasm module script but the server responded with a MIME type of "application/json" (package.json).',
+    stack: "http://localhost/__preview__/x/package.json",
+  },
+});
+assert.ok(
+  previewConsole.getErrors().some((line) => line.includes('MIME type of "application/json"')),
+  "location-only stack must not hide MIME message",
+);
+
 console.log("smoke-preview-console: ok");
