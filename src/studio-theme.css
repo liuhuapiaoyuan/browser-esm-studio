@@ -131,7 +131,7 @@ textarea:focus-visible {
 
 .brand-copy small {
   color: #789089;
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: .05em;
 }
 
@@ -293,7 +293,7 @@ textarea:focus-visible {
   border: 1px solid rgba(36, 173, 142, .23);
   border-radius: 999px;
   background: rgba(255, 255, 255, .7);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 600;
 }
 
@@ -325,7 +325,7 @@ textarea:focus-visible {
   border: 1px solid rgba(143, 201, 185, .45);
   border-radius: 6px;
   background: rgba(255, 255, 255, .55);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .intro-character {
@@ -779,7 +779,7 @@ textarea:focus-visible {
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .project-title-copy i {

@@ -1,0 +1,32 @@
+# 复制到服务器后：
+#   1. 按需改下方 environment / 新建 .env
+#   2. docker compose pull && docker compose up -d
+#
+# 镜像：docker.cnb.cool/qzsyzn/docker/llm-html
+
+services:
+  llm-html:
+    image: docker.cnb.cool/qzsyzn/docker/llm-html:latest
+    container_name: llm-html
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    environment:
+      # OpenAI-compatible API（浏览器 → /openai-proxy → 此处）
+      AI_PROXY_TARGET: ${AI_PROXY_TARGET:-https://api.openai.com}
+
+      # Dynamic DB（浏览器 → /ddb → 此处，并注入身份头）
+      DYNAMIC_DB_BASE_URL: ${DYNAMIC_DB_BASE_URL:-https://dynamic-db.b.nps.qzsyzn.com}
+      DDB_USER_ID: ${DDB_USER_ID:-dev-user}
+      DDB_ROLES: ${DDB_ROLES:-admin}
+
+      # 文生图（浏览器 → /lite-image-proxy → SiliconFlow）
+      LITE_IMAGE_PROXY_TARGET: ${LITE_IMAGE_PROXY_TARGET:-https://api.siliconflow.cn}
+      # 建议放 .env，勿提交仓库
+      LITE_IMAGE_API_KEY: ${LITE_IMAGE_API_KEY:-}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s

@@ -58,8 +58,26 @@ function preserveThinkTagsMiddleware(): LanguageModelMiddleware {
   };
 }
 
+/**
+ * `@ai-sdk/openai-compatible` builds endpoints with `new URL(baseURL + path)`,
+ * which rejects same-origin relative paths like `/openai-proxy/v1`.
+ */
+function resolveAiBaseURL(raw: string): string {
+  const trimmed = raw.trim().replace(/\/+$/, "");
+  if (!trimmed) return trimmed;
+  try {
+    const origin =
+      typeof globalThis !== "undefined" && "location" in globalThis && globalThis.location?.origin
+        ? globalThis.location.origin
+        : "http://localhost";
+    return new URL(trimmed, origin).href.replace(/\/+$/, "");
+  } catch {
+    return trimmed;
+  }
+}
+
 export function createLanguageModel(settings: AiSettings = loadAiSettings()): LanguageModel {
-  const baseURL = settings.baseURL.replace(/\/+$/, "");
+  const baseURL = resolveAiBaseURL(settings.baseURL);
   // Default: no json_schema structured outputs — most ChatGPT-compatible proxies lack it.
   // Planner uses tool calling instead; leave supportsStructuredOutputs unset (false).
   const provider = createOpenAICompatible({
