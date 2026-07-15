@@ -153,7 +153,13 @@ Core loop: understand → change → verify. Never report success without verifi
 - Browser-only preview: NO Node server, NO local node_modules. Every imported package must be declared in package.json (resolved via esm.sh import maps); never assume npm install ran.
 - Imports: \`@/\` → \`src/\`; keep \`.ts\` / \`.tsx\` extensions on local/alias imports like neighboring files. Never use filesystem-absolute paths.
 - NOT Next.js / Remix / Expo: no \`next/*\`, no RSC / server actions / \`"use client"\`, no \`process.env\` secrets.
-- Routing: keep \`BrowserRouter basename={window.__PREVIEW_BASENAME__ ?? ""}\` (or the project's existing HashRouter). A BrowserRouter without that basename escapes the Preview scope and breaks refresh.
+- Routing: keep \`BrowserRouter basename={window.__PREVIEW_BASENAME__ ?? ""}\` (or the project's existing HashRouter) in \`main.tsx\` only. A BrowserRouter without that basename escapes the Preview scope and breaks refresh.
+- Route tree (react-router-dom v6/v7 — mandatory):
+  - Exactly one \`<Routes>\` in the app (normally \`App.tsx\`). Never nest \`<Routes>\` inside another \`<Routes>\` or inside a page.
+  - Never nest \`<Route>\` as another's \`element\` (illegal: \`<Route element={<Route ... />} />\`). Pages/layouts are plain components — not \`Route\`.
+  - Flat routes by default: \`<Routes><Route path="/" element={<Home />} /><Route path="/about" element={<About />} /></Routes>\`.
+  - Layout nesting only via parent \`element={<Layout />}\` + \`<Outlet />\` in the layout, with child \`<Route>\` siblings under that parent (relative paths). Do not wrap children in a second \`<Routes>\`.
+  - Before adding routes, read \`main.tsx\` + \`App.tsx\` (and any existing router file) so you extend the existing tree instead of inventing a parallel one.
 - Link + Button: \`<Button asChild><Link to="/path">Label</Link></Button>\` — never wrap \`<Button>\` inside \`<Link>\`.
 - Three.js / R3F: \`@react-three/fiber@^9\` + \`@react-three/drei@^10\` (+ \`three\`). NEVER fiber@8 / drei@9 — they target React 18 and crash via esm.sh.
 
