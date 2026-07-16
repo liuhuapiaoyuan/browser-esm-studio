@@ -4,13 +4,8 @@
 
 - 用户要**从零制作**「封面 → 角色对话 → 高潮互动 → 金句结局」式课文沉浸体验，**无需上传参考 HTML / 图片 / 音频**
 - 典型需求：语文课文情景再现（《军神》《狼牙山五壮士》《草船借箭》等）、人物对话演绎、戏剧化阅读、思政/历史短剧式课件
-- 需要：`image.generate` 统一风格场景与角色图 → 可选 `speech.generate` 结局旁白 → 在 sandbox 落地 React 交互页
+- 需要：`image.generate` 统一风格场景与角色图 → `sfx.map` 交互音效 → 可选 `speech.generate` 对白/结局语音 → 在 sandbox 落地 React 交互页
 
-本技能是 **playbook**（无独立 CLI 命令）。依赖已加载的 **Sandbox**；配图用内置 `image.generate`；结局语音用内置 `speech.generate`（可选）。
-
-**Never** 产出巨型单文件 HTML / `srcdoc` 壳、下载外链图片或写入 base64、复制 `_bm_*` / analytics 噪声、强绑 Tailwind CDN / anime.js CDN（用项目内 CSS + 轻量 transition / `@keyframes`）。
-
-若用户**已上传参考 HTML** 且希望「按文件仿作」，优先建议启用 `interactive-quest`；本 skill 仍可独立运行，仅把参考当作可选补充，**不强制读取**。
 
 若用户要的是**地图选关闯关答题**，优先建议 `quest-learning`；若是**阶段卡片全景展板**，优先建议 `panorama-showcase`；若是**像 PPT 一样多页翻页讲解**，优先建议 `slide-courseware`；不要硬套本 skill。
 
@@ -30,11 +25,11 @@ cover → dialogue → (optional choices) → climax → ending → replay?
 
 | 阶段 | 行为 |
 |------|------|
-| `cover` | 全屏氛围底图；大标题 + 副标题 +「开始体验」；衬线/文学气质 |
-| `dialogue` | 双角色立绘并排；当前说话者高亮（opacity/scale），另一方变暗缩小；底部对话框打字机出字；「▼ 点击继续」推进 |
-| `choices`（可选） | 某句对话后弹出 1–2 个选项；选择影响下一句或直接进入 climax（默认多数课文**无分支**，线性推进即可） |
-| `climax` | 课文高潮互动（默认 `click-meter`：连点积累进度至目标值，伴随震动/状态文案递进） |
-| `ending` | 主角圆形肖像 + 金句逐字浮现；可选播放旁白音频；「再读一遍」重开 |
+| `cover` | 全屏氛围底图；大标题 + 副标题 +「开始体验」（`start` 音效）；衬线/文学气质 |
+| `dialogue` | 双角色立绘并排；当前说话者高亮；底部对话框打字机出字；关键句可播 TTS；「▼ 点击继续」推进（`click`） |
+| `choices`（可选） | 某句对话后弹出 1–2 个选项；选择影响下一句或直接进入 climax（选中 `click`；默认多数课文**无分支**，线性推进即可） |
+| `climax` | 课文高潮互动（默认 `click-meter`：连点积累进度，按钮 `click` 节流，完成 `success`） |
+| `ending` | 主角圆形肖像 + 金句逐字浮现；可选播放旁白音频；「再读一遍」重开（可配 `applause` 音效） |
 | `replay` | `location` 式整页重置或重置 state 回到 `cover` |
 
 ### Layout L3-lesson-drama（写死）
@@ -48,17 +43,42 @@ cover → dialogue → (optional choices) → climax → ending → replay?
   - 说话者切换：当前 `scale-100 opacity-100`，另一角色 `scale-95 opacity-50`
 - **高潮区**：居中环形进度或大号计数 + 状态文案 + 主操作按钮；点击时整场景轻微 shake
 - **结局区**：暗遮罩 + 圆形肖像 + 金句；按钮组延迟淡入
-- 色板按课文气质选，结构字段固定：`primary` / `secondary` / `accent` / `dark`
+- 色板**由 Agent 按课文自主设计**，结构字段固定：`primary` / `secondary` / `accent` / `dark`（用户指定色优先，见下表）
 
-| 主题倾向 | 建议气质 | 示例 primary / secondary / accent |
-|----------|----------|-----------------------------------|
-| 革命/军旅/意志（《军神》类） | 复古绿 + 米色 | `#2D593E` / `#EBEDD4` / `#AE7645` |
-| 古诗文/文言 | 墨青 + 宣纸色 | `#1F3A3A` / `#F3EDE0` / `#8B6914` |
-| 童话/寓言 | 暖橙 + 奶油 | `#C2410C` / `#FFF7ED` / `#CA8A04` |
-| 现代/校园 | 靛蓝 + 浅灰蓝 | `#1E3A8A` / `#EFF6FF` / `#0D9488` |
-| 用户指定色 | 以用户为准 | — |
+**配色原则（每次 run 须产出独特组合，禁止无脑复用同一套 hex）**
 
-《军神》气质默认色板（**仅**军旅/意志类可作缺省）：
+| 角色 | 职责 |
+|------|------|
+| `primary` | 主叙事色：按钮、描边、标题强调；承载课文情绪基调 |
+| `secondary` | 大面积衬底/对话框底：高明度、低饱和，保证长文可读 |
+| `accent` | 点睛色：金句、进度、高亮；与 primary 有对比但同气质 |
+| `dark` | 遮罩/阴影/结局暗场：primary 的加深变体，非纯黑 |
+
+**从课文推导气质（至少综合 2 项再定色，勿套模板）**
+
+- **时代与场景**：近代军旅、唐宋山水、民国学堂、神话仙境、都市校园……
+- **情感弧**：悲壮坚毅、诙谐童趣、悬疑紧张、温情治愈、豪迈激昂……
+- **课文意象**：刀锋/钢铁、江雾/月色、稻浪/炊烟、烽火/红旗、竹石/青松……
+- **受众语气**：低幼宜暖亮饱和；初中宜克制、略复古或文艺
+
+**灵感方向（仅作发散，须改写为本次专属 hex，可跨类混搭）**
+
+| 气质关键词 | 可参考色相区间（自行取具体色值） |
+|------------|----------------------------------|
+| 军旅/意志/劳动 | 军绿、橄榄、铁锈赭、旧帆布米 |
+| 古诗文/水墨 | 墨青、黛蓝、宣纸米、朱砂/泥金点缀 |
+| 神话/寓言/童话 | 琥珀、茜红、薄荷、薰衣草、天青 |
+| 历史/谍战/悬疑 | 烟灰蓝、炭黑、暗红、煤油灯黄 |
+| 自然/田园/科普 | 麦金、苔绿、天青、泥土褐 |
+| 校园/青春/现代 | 靛蓝、雾粉、薄荷青、浅灰紫 |
+| 革命/红色经典 | 绛红、砖红、米白、深松绿对比 |
+| 科幻/奇幻 | 电蓝、紫晶、霓虹青、深空紫 |
+
+定稿后自检：`secondary` 与对话框白字/深字对比足够；`accent` 在 `primary` 底上可辨认；四色同一插画气质（写入 `styleLock`）。
+
+| 用户指定色 | 以用户为准，可只给 primary 由 Agent 推导其余三色 |
+
+缺省参考（**仅**用户未指定且课文为军旅/意志类时可用；其他课文必须自设计）：
 
 ```json
 {
@@ -82,6 +102,8 @@ cover → dialogue → (optional choices) → climax → ending → replay?
 - **高潮类型**：`click-meter`（目标值按课文意象，如「72 刀」→ `target: 72`）
 - **结局金句**：1 句（课文点题名句或老师赞语）
 - **结局旁白**：默认 **生成**（`speech.generate`，短句 = 金句全文）；用户明确不要语音则跳过
+- **交互音效**：默认 **开启**（`sfx.map` 映射 `start` / `click` / `success` / `applause`，见下节）
+- **对白朗读**：默认 **关键句**（`dialogueSpeech: "keyLines"`，2–4 条转折/点题对白）；用户要全配音 → `all`；明确不要 → `none`
 - **受众**：小学中高年级 / 初中语文；语气庄重共情，忌油滑梗
 - **分支选项**：默认关闭（`choicesEnabled: false`）
 
@@ -94,6 +116,65 @@ cover → dialogue → (optional choices) → climax → ending → replay?
 | `reveal-tap` | 逐次点击揭开 3–5 个关键词/意象 | 象征物、景物描写高潮 |
 
 未知类型降级为 `click-meter`，并在最终回复说明。
+
+### 音效与语音（沉浸增强）
+
+课文戏剧感除画面外，**轻量音效 + 选择性 TTS** 能显著提升课堂体验。二者分工：
+
+| 类型 | 命令 | 用途 |
+|------|------|------|
+| 短音效 | `sfx.list` → `sfx.map` | 按钮反馈、场景切换、高潮达成、结局鼓掌 |
+| 语音朗读 | `speech.generate` | 角色对白、结局金句旁白 |
+
+**禁止**在组件里手写外链 mp3 / SiliconFlow fetch；音效一律 `sfx.map`，语音一律 `speech.generate`。
+
+#### 音效（默认开启）
+
+1. `cli_execute` → `sfx.list` 浏览目录（不确定 id 时）
+2. 一次 `sfx.map` 写入 sandbox（默认路径 `src/assets/sfx/<id>.ts`）
+3. 实现侧封装 `playSfx(url)`，`audio.play().catch(() => {})` 吞掉自动播放限制
+
+**默认映射 id**（可按课文气质替换同类 id，勿堆太多）：
+
+| id | 触发时机 |
+|----|----------|
+| `start` | 封面「开始体验」点击 |
+| `click` | 对话「继续」、选项选中、高潮操作按钮、结局「再读一遍」 |
+| `success` | 高潮互动完成（如 `click-meter` 点满） |
+| `applause` | 结局金句完整浮现后（可选，庄重课文可省略改 `ding`） |
+
+可选增强（按需 `sfx.map`，勿全绑）：
+
+| id | 适用 |
+|----|------|
+| `knock` | 从封面进入对话、重大转折前 |
+| `ding` | 说话者切换、弹出选项 |
+| `coin` | 高潮进度每过一档 `statusLines` 里程碑 |
+| `cheer` | 童趣/庆祝向课文结局 |
+
+高潮连点场景：`click` **节流**（如 ≥120ms 间隔），避免音效叠成噪音。
+
+#### 对白语音（选择性生成）
+
+蓝图 `audio.dialogueSpeech`：
+
+| 值 | 行为 |
+|----|------|
+| `none` | 仅打字机，不生成对白 TTS |
+| `keyLines`（默认） | 仅为 `speech: true` 的 2–4 条关键对白生成 |
+| `all` | 每条 `dialogues[]` 均生成（用户明确要求「全配音」时） |
+
+生成规则：
+
+- 每条待合成对白 `text` **去掉括号神态**，保留可读台词；单条 ≤60 字为宜
+- `speaker` 绑定角色：`characters[].voice`（如 `charles` / `diana`）；缺省时按角色性别/气质推断
+- 路径：`src/assets/generated/audio/dialogue-{序号}.ts`（与蓝图 `speechAssetPath` 一致）
+- 播放：该句打字机开始时 `play()`；用户点「继续」时 `pause()` 并切下一句
+- 结局旁白独立：`ending.speechAssetPath`，金句浮现后再播，勿与最后一句对白抢播
+
+**speaker 参考**：庄重男声 `charles` / `david`；沉稳女声 `diana` / `anna`；少年感 `bella` / `alex`（按角色微调 `speed` 0.9–1.1）
+
+用户说「不要语音 / 不要配音」→ `dialogueSpeech: "none"` 且 `withEndingSpeech: false`，但仍可保留轻量 `sfx`。
 
 ---
 
@@ -108,7 +189,9 @@ cover → dialogue → (optional choices) → climax → ending → replay?
 | `tone` | 语气 | 庄重共情 |
 | `climaxType` | 高潮玩法 | `click-meter` |
 | `withEndingSpeech` | 是否生成结局旁白 | `true` |
-| `palette` | 色板 | **按课文气质**（军旅→复古绿；其余见上表） |
+| `dialogueSpeech` | 对白朗读范围 | `keyLines`（2–4 条关键句） |
+| `withSfx` | 是否映射交互音效 | `true` |
+| `palette` | 色板 | **Agent 按课文自主设计**四色；用户指定优先；军旅/意志类缺省可用《军神》绿 |
 
 信息足够则**直接执行**，不要反复追问已能从上下文推断的内容。
 
@@ -127,7 +210,7 @@ cover → dialogue → (optional choices) → climax → ending → replay?
 `sandbox.addFile` / `sandbox.writeFile` 写入完整蓝图骨架：
 
 - `source`: `{ "path": null, "title": "…", "genre": "lesson-drama" }` — 无参考时 `path` 为 `null`
-- `reuse`: 固定 `coreLoop`、`layout: "L3-lesson-drama"`；`palette` **按课文气质**
+- `reuse`: 固定 `coreLoop`、`layout: "L3-lesson-drama"`；`palette` **按课文自主设计**（非军旅类禁止默认套用《军神》绿）
 - `intent`: 用户主题/受众/语气
 - `screens`: `["cover", "dialogue", "climax", "ending"]`
 - `characters[]` / `dialogues[]` / `climax` / `ending`：见下方 schema
@@ -139,12 +222,23 @@ cover → dialogue → (optional choices) → climax → ending → replay?
 | 字段 | 要求 |
 |------|------|
 | `characters` | 恰好 2 人（缺省）；含 `id`、`name`、`role`（protagonist/deuteragonist） |
-| `dialogues[]` | 每条：`speaker`（character id）、`text`（可含括号神态）、`action`（情绪标签，供动画提示） |
+| `dialogues[]` | 每条：`speaker`、`text`（可含括号神态）、`action`（情绪标签）；可选 `speech: true`（纳入 TTS）；生成后填 `speechAssetPath` |
 | `climax` | `type` + 文案；`click-meter` 须有 `target`、`buttonLabel`、`statusLines[]`（按进度区间） |
 | `ending.quote` | 点题金句，宜短（≤40 字为佳，最长不超过 60 字） |
 | `cover.title` / `subtitle` | 课文名 + 一句情境召唤 |
 
 对白顺序须服务叙事弧：铺垫 → 冲突/揭示 → 决心 → 自然过渡到 climax。
+
+`audio` 块（写入蓝图）：
+
+```json
+{
+  "withSfx": true,
+  "sfxIds": ["start", "click", "success", "applause"],
+  "dialogueSpeech": "keyLines",
+  "withEndingSpeech": true
+}
+```
 
 ---
 
@@ -183,18 +277,22 @@ cover → dialogue → (optional choices) → climax → ending → replay?
 
 ### styleLock（先写后画）
 
-在批量 `image.generate` **之前** 写入蓝图，并作为 **每条** prompt 的固定前缀。须与 `palette` 气质一致。
+在批量 `image.generate` **之前** 写入蓝图，并作为 **每条** prompt 的固定前缀。须与当次 `palette` 气质一致（把主色/点缀色感受写进文案，勿固定套句）。
 
-军旅/意志类示例：
+写法：`{媒介与时代} + {与 palette 呼应的色感词} + {情绪/留白} + 无文字无水印`
 
-```
-早期中国近代历史题材插画，略带油画与纸本感，复古绿与暖赭点缀，庄重克制，人物神态坚毅清晰，无文字无水印，
-```
-
-古诗文类示例：
+示例（须按当次课文与 palette **改写**，非可复制模板）：
 
 ```
-水墨淡彩古典插画，宣纸质感，墨青与暖赭点缀，意境留白，人物与景物清晰可读，无文字无水印，
+早期中国近代历史题材插画，略带油画与纸本感，复古军绿与暖赭点缀，庄重克制，人物神态坚毅清晰，无文字无水印，
+```
+
+```
+水墨淡彩古典插画，宣纸质感，墨青与泥金点缀，意境留白，人物与景物清晰可读，无文字无水印，
+```
+
+```
+童话水彩风，暖琥珀与奶油底色，柔和光晕，角色表情生动，无文字无水印，
 ```
 
 同一 run 内所有 asset **共用同一 styleLock**。
@@ -204,8 +302,10 @@ cover → dialogue → (optional choices) → climax → ending → replay?
 1. 内容定稿 → 列出完整 `assets[]`（1 背景 + N 角色 + 1 结局肖像）
 2. **批量** `image.generate`
 3. 核对 mapped 齐全
-4. （可选）`speech.generate` 结局旁白 → `src/assets/generated/audio/ending-quote.ts`
-5. **仅当配图就绪** 才写 React 组件
+4. 若 `audio.withSfx`：`sfx.map` → `ids` 取蓝图 `audio.sfxIds`
+5. 若 `audio.dialogueSpeech !== "none"`：为标记 `speech: true` 或全部对白批量 `speech.generate`
+6. 若 `audio.withEndingSpeech`：`speech.generate` 结局旁白 → `src/assets/generated/audio/ending-quote.ts`
+7. **仅当配图就绪** 才写 React 组件
 
 ### 3. Art direction + AIGC
 
@@ -215,11 +315,17 @@ cover → dialogue → (optional choices) → climax → ending → replay?
    - `path` = 蓝图中的 `path`
    - 尺寸按上节
 3. 失败用 `cli_diagnose` 重试；**禁止**用 emoji/纯色/外链替代
-4. 若 `withEndingSpeech`：`cli_execute` → `speech.generate`：
+4. 若 `audio.withSfx`：`cli_execute` → `sfx.map`：
+   - `ids` = 蓝图 `audio.sfxIds`（默认 `["start","click","success","applause"]`）
+5. 若 `audio.dialogueSpeech !== "none"`：对需朗读的对白逐条 `speech.generate`：
+   - `input` = 去掉括号的台词
+   - `speaker` = 说话角色 `characters[].voice`
+   - `path` = 蓝图 `dialogues[].speechAssetPath`
+6. 若 `audio.withEndingSpeech`：`cli_execute` → `speech.generate`：
    - `input` = `ending.quote`（可略加停顿标点）
-   - `speaker`：庄重男声可用 `charles` / `david`；女声旁白可用 `diana` / `anna`
+   - `speaker`：旁白可用 `diana` / `charles`（与对白声线区分或统一，勿冲突）
    - `path`：`src/assets/generated/audio/ending-quote.ts`
-5. 勿手写 SiliconFlow
+7. 勿手写 SiliconFlow / 外链音频 URL
 
 ### 4. Implement（模块边界写死）
 
@@ -227,6 +333,7 @@ cover → dialogue → (optional choices) → climax → ending → replay?
 src/content/lesson-game-blueprint.json
 src/content/lesson-game-data.ts
 src/lib/lesson-game/state.ts
+src/lib/lesson-game/audio.ts
 src/components/lesson-game/Cover.tsx
 src/components/lesson-game/Dialogue.tsx
 src/components/lesson-game/Climax.tsx
@@ -239,9 +346,11 @@ src/App.tsx
 - **打字机**：用 `requestAnimationFrame` / 简单 interval，或 CSS；**不要**强绑 anime.js CDN
 - **shake / 逐字浮现**：纯 CSS `@keyframes` 或少量 JS
 - 配图：`import url from "../assets/generated/....ts"`；经 `portraitAssetId` / asset id 查表
-- 结局音频：有 generated 模块则 `audio.play()`（catch 自动播放失败）；无则静默
+- **音效**：`audio.ts` 导出 `playSfx(id)`，从 `src/assets/sfx/*.ts` import；按钮 `onClick` 内先 `playSfx` 再切状态
+- **对白音频**：有 `speechAssetPath` 则打字机开始时播放，继续时停止；无则静默
+- 结局音频：有 generated 模块则金句浮现后 `audio.play()`（catch 自动播放失败）；无则静默
 - **禁止**主产物是带 `srcdoc` 的壳 HTML
-- **禁止**依赖外链 CDN 脚本（Tailwind Play CDN、anime.js CDN、外链 mp3）
+- **禁止**依赖外链 CDN 脚本（Tailwind Play CDN、anime.js CDN）；**禁止**手写外链 mp3（须走 `sfx.map` / `speech.generate`）
 
 ### 5. Verify
 
@@ -253,14 +362,15 @@ src/App.tsx
    - 对话推进：说话者焦点切换 + 打字机 + 继续按钮
    - 对白结束后进入高潮；`click-meter` 可点满并进入结局
    - 结局金句逐字出现；有旁白则尝试播放；「再读一遍」可用
+   - 封面/继续/高潮完成等按钮有对应音效（`withSfx` 时）；对白 `keyLines`/`all` 时有朗读
    - 移动端对话框与立绘不严重裁切
-   - 无外链 CDN / 无 `musk-online` 素材
+   - 无手写外链 CDN 脚本 / 无 `musk-online` 素材
 
 ---
 
 ## 蓝图 schema（最小）
 
-下列示例为《军神》气质（复古绿）；**换课文时必须同步换对白、高潮语义、palette 与 styleLock**。
+下列示例为《军神》气质（复古绿）；**换课文时必须同步换对白、高潮语义，并重新自主设计 palette 与 styleLock**（勿复用示例 hex）。
 
 ```json
 {
@@ -280,6 +390,12 @@ src/App.tsx
     "audience": "小学高年级语文",
     "tone": "庄重共情"
   },
+  "audio": {
+    "withSfx": true,
+    "sfxIds": ["start", "click", "success", "applause"],
+    "dialogueSpeech": "keyLines",
+    "withEndingSpeech": true
+  },
   "screens": ["cover", "dialogue", "climax", "ending"],
   "cover": {
     "title": "军神",
@@ -291,12 +407,14 @@ src/App.tsx
       "id": "walker",
       "name": "沃克医生",
       "role": "deuteragonist",
+      "voice": "david",
       "portraitAssetId": "char-walker"
     },
     {
       "id": "liu",
       "name": "刘伯承",
       "role": "protagonist",
+      "voice": "charles",
       "portraitAssetId": "char-liu"
     }
   ],
@@ -309,7 +427,9 @@ src/App.tsx
     {
       "speaker": "liu",
       "text": "刘大川。",
-      "action": "calm"
+      "action": "calm",
+      "speech": true,
+      "speechAssetPath": "src/assets/generated/audio/dialogue-02.ts"
     }
   ],
   "climax": {
@@ -374,8 +494,8 @@ src/App.tsx
 
 ## Planner 建议步序
 
-1. 从用户意图生成 `lesson-game-blueprint.json` 骨架（`source.path=null`，固定 L3-lesson-drama；**按课文选 palette**）
-2. 填满 `characters` / `dialogues` / `climax` / `ending`；展开完整 `assets[]`
-3. 写 `styleLock` → **批量 `image.generate`** → 可选 `speech.generate` 结局旁白
-4. 实现 Cover / Dialogue / Climax / Ending + state，接到 `App.tsx`
+1. 从用户意图生成 `lesson-game-blueprint.json` 骨架（`source.path=null`，固定 L3-lesson-drama；**自主设计 palette**；写入 `audio` 块）
+2. 填满 `characters` / `dialogues` / `climax` / `ending`；标记关键对白 `speech: true`；展开完整 `assets[]`
+3. 写 `styleLock` → **批量 `image.generate`** → `sfx.map` → 按需批量 `speech.generate`（对白 + 结局）
+4. 实现 `audio.ts` + Cover / Dialogue / Climax / Ending + state，接到 `App.tsx`
 5. `typecheck` + `getPreviewErrors`
