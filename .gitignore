@@ -10,3 +10,5 @@ package-lock.json
 yarn.lock
 pnpm-lock.yaml
 upload
+scripts/.skill-icon-tmp/
+scripts/.sfx-tmp/

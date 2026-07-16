@@ -6,11 +6,13 @@
 - 典型需求：单元作文闯关、学科知识闯关、词汇/阅读/数学/科学等分关练习
 - 需要：`image.generate` 统一风格配图 → 在 sandbox 落地 React 交互页
 
-本技能是 **playbook**（无独立 CLI 命令）。依赖已加载的 **Sandbox** 与 **Lite Image**。
+本技能是 **playbook**（无独立 CLI 命令）。依赖已加载的 **Sandbox**；配图用内置 `image.generate`。
 
 **Never** 产出巨型单文件 HTML / `srcdoc` 壳、下载外链图片或写入 base64、复制 `_bm_*` / analytics 噪声。
 
 若用户**已上传参考 HTML** 且希望「按文件仿作」，优先建议启用 `interactive-quest`；本 skill 仍可独立运行，仅把参考当作可选补充，**不强制读取**。
+
+若用户要的是**课文对话情景演绎**（封面→对白→高潮→金句），优先建议 `text-interactive-game`；若是**像 PPT 一样多页翻页讲解**，优先建议 `slide-courseware`；不要硬套本 skill。
 
 若本 skill 未加载而用户明确要做闯关学习，告知用户启用 `quest-learning`，不要假装跑完整流水线。
 

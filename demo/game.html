@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+    <html lang=&quot;zh-CN&quot;>
+    <head>
+        <meta charset=&quot;UTF-8&quot;>
+        <meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1.0&quot;>
+        <title>课文互动游戏：军神</title>
+        <script src=&quot;https://cdn.tailwindcss.com&quot;></script>
+        <script src=&quot;https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js&quot;></script>
+        <script>
+            tailwind.config = {
+                theme: {
+                    extend: {
+                        colors: {
+                            primary: '#2D593E', // 复古绿
+                            secondary: '#EBEDD4', // 米色背景
+                            accent: '#AE7645', // 棕色点缀
+                            dark: '#1D422B',
+                        },
+                        fontFamily: {
+                            serif: ['&quot;Noto Serif SC&quot;', 'SimSun', 'serif'],
+                        }
+                    }
+                }
+            }
+        </script>
+        <style>
+            @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&amp;display=swap');
+            
+            body {
+                font-family: 'Noto Serif SC', serif;
+                background-color: #1D422B;
+                overflow: hidden;
+            }
+    
+            .scene {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                display: none;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                opacity: 0;
+                transition: opacity 0.5s ease;
+            }
+    
+            .scene.active {
+                display: flex;
+                opacity: 1;
+            }
+    
+            .dialog-box {
+                background: rgba(255, 255, 255, 0.95);
+                backdrop-filter: blur(5px);
+                -webkit-backdrop-filter: blur(5px);
+                border: 2px solid #2D593E;
+                box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            }
+    
+            .btn-retro {
+                background: #2D593E;
+                color: #EBEDD4;
+                border: 2px solid #EBEDD4;
+                transition: all 0.3s ease;
+                box-shadow: 0 4px 0 #1D422B;
+            }
+    
+            .btn-retro:active {
+                transform: translateY(4px);
+                box-shadow: 0 0 0 #1D422B;
+            }
+    
+            .shake-element {
+                display: inline-block;
+            }
+    
+            /* 进度条动画 */
+            .progress-bar {
+                transition: width 0.2s ease-out;
+            }
+            
+            .bg-texture {
+                background-image: url(&quot;data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%232d593e' fill-opacity='0.05'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E&quot;);
+            }
+        </style>
+    </head>
+    <body class=&quot;text-gray-800 h-screen w-screen relative&quot;>
+    
+        <!-- 背景层 -->
+        <div class=&quot;absolute inset-0 z-0&quot;>
+            <img src=&quot;https://musk-online.fbcontent.cn/pub-musk-ai-studio/workflow/file/picture/kThZv5p8TvdXKmk6LKB8Gd.jpg&quot; alt=&quot;Clinic Background&quot; class=&quot;w-full h-full object-cover opacity-40&quot;>
+            <div class=&quot;absolute inset-0 bg-texture mix-blend-multiply&quot;></div>
+            <div class=&quot;absolute inset-0 bg-gradient-to-b from-primary/30 to-dark/80&quot;></div>
+        </div>
+    
+        <!-- 场景1: 开始界面 -->
+        <section id=&quot;scene-start&quot; class=&quot;scene active z-10&quot;>
+            <div class=&quot;text-center p-8 max-w-2xl mx-auto&quot;>
+                <h1 class=&quot;text-6xl font-bold text-secondary mb-4 tracking-widest drop-shadow-lg&quot;>军神</h1>
+                <p class=&quot;text-xl text-secondary/80 mb-12 font-light&quot;>重返1916年，见证钢铁意志的诞生</p>
+                <button onclick=&quot;game.start()&quot; class=&quot;btn-retro px-12 py-4 text-2xl rounded-lg font-bold tracking-wider hover:bg-accent&quot;>
+                    开始体验
+                </button>
+            </div>
+        </section>
+    
+        <!-- 场景2: 问诊对话 -->
+        <section id=&quot;scene-dialogue&quot; class=&quot;scene z-10&quot;>
+            <div class=&quot;w-full max-w-4xl flex flex-col md:flex-row items-end justify-center gap-4 mb-8 px-4 h-[60vh]&quot;>
+                <!-- 沃克医生 -->
+                <div class=&quot;relative w-1/2 md:w-1/3 h-full flex items-end justify-center transition-transform duration-500&quot; id=&quot;char-walker&quot;>
+                    <img src=&quot;https://musk-online.fbcontent.cn/pub-musk-ai-studio/workflow/file/picture/hqPsUQNXJJuhud5fjbbQ9R.jpg&quot; class=&quot;h-5/6 object-contain drop-shadow-2xl rounded-lg border-4 border-secondary/20&quot;>
+                    <div class=&quot;absolute bottom-4 bg-primary text-secondary px-4 py-1 rounded text-sm&quot;>沃克医生</div>
+                </div>
+                <!-- 刘伯承 -->
+                <div class=&quot;relative w-1/2 md:w-1/3 h-full flex items-end justify-center transition-transform duration-500 opacity-50 scale-95&quot; id=&quot;char-liu&quot;>
+                    <img src=&quot;https://musk-online.fbcontent.cn/pub-musk-ai-studio/workflow/file/picture/pAWzhhTmkzFuWnMABhMkr8.jpg&quot; class=&quot;h-5/6 object-contain drop-shadow-2xl rounded-lg border-4 border-secondary/20&quot;>
+                    <div class=&quot;absolute bottom-4 bg-accent text-secondary px-4 py-1 rounded text-sm&quot;>刘伯承</div>
+                </div>
+            </div>
+    
+            <!-- 对话框 -->
+            <div class=&quot;dialog-box w-11/12 max-w-3xl rounded-xl p-6 min-h-[160px] relative&quot;>
+                <p id=&quot;dialogue-text&quot; class=&quot;text-lg md:text-xl leading-relaxed text-primary font-medium mb-4&quot;></p>
+                <div id=&quot;choices-container&quot; class=&quot;flex gap-4 justify-end hidden&quot;>
+                    <!-- 选项将动态插入这里 -->
+                </div>
+                <button id=&quot;next-btn&quot; onclick=&quot;game.nextDialogue()&quot; class=&quot;absolute bottom-4 right-4 text-accent hover:text-primary animate-bounce&quot;>
+                    ▼ 点击继续
+                </button>
+            </div>
+        </section>
+    
+        <!-- 场景3: 手术挑战 -->
+        <section id=&quot;scene-surgery&quot; class=&quot;scene z-10&quot;>
+            <div class=&quot;text-center text-secondary mb-8&quot;>
+                <h2 class=&quot;text-3xl font-bold mb-2&quot;>意志力的考验</h2>
+                <p class=&quot;text-lg opacity-80&quot;>手术正在进行，请保持清醒...</p>
+            </div>
+    
+            <div class=&quot;relative w-64 h-64 mb-8 flex items-center justify-center&quot;>
+                <!-- 倒计时/计数圈 -->
+                <svg class=&quot;w-full h-full transform -rotate-90&quot;>
+                    <circle cx=&quot;128&quot; cy=&quot;128&quot; r=&quot;120&quot; stroke=&quot;#1D422B&quot; stroke-width=&quot;12&quot; fill=&quot;none&quot; class=&quot;opacity-50&quot;/>
+                    <circle id=&quot;progress-ring&quot; cx=&quot;128&quot; cy=&quot;128&quot; r=&quot;120&quot; stroke=&quot;#AE7645&quot; stroke-width=&quot;12&quot; fill=&quot;none&quot; stroke-dasharray=&quot;754&quot; stroke-dashoffset=&quot;754&quot; class=&quot;transition-all duration-300&quot;/>
+                </svg>
+                <div class=&quot;absolute inset-0 flex flex-col items-center justify-center text-secondary&quot;>
+                    <span class=&quot;text-sm uppercase tracking-widest&quot;>已忍受</span>
+                    <span id=&quot;knife-count&quot; class=&quot;text-6xl font-bold font-mono&quot;>0</span>
+                    <span class=&quot;text-sm&quot;>刀</span>
+                </div>
+            </div>
+    
+            <div class=&quot;text-center space-y-4&quot;>
+                <p id=&quot;surgery-status&quot; class=&quot;text-secondary/90 text-lg h-8&quot;>准备开始手术...</p>
+                <button id=&quot;endure-btn&quot; onclick=&quot;game.endurePain()&quot; class=&quot;btn-retro px-8 py-6 rounded-full text-xl font-bold shadow-lg active:scale-95 transform transition-transform&quot;>
+                    ✊ 坚持住！(点击)
+                </button>
+            </div>
+        </section>
+    
+        <!-- 场景4: 结局 -->
+        <section id=&quot;scene-ending&quot; class=&quot;scene z-10&quot;>
+            <div class=&quot;bg-black/60 absolute inset-0&quot;></div>
+            <div class=&quot;relative z-10 text-center p-8 max-w-3xl&quot;>
+                <div class=&quot;mb-8&quot;>
+                    <img src=&quot;https://musk-online.fbcontent.cn/pub-musk-ai-studio/workflow/file/picture/pAWzhhTmkzFuWnMABhMkr8.jpg&quot; class=&quot;w-48 h-48 object-cover rounded-full border-4 border-accent mx-auto shadow-2xl mb-6&quot;>
+                </div>
+                <h2 class=&quot;text-4xl md:text-5xl font-bold text-secondary mb-8 leading-tight&quot; id=&quot;ending-text&quot;>
+                    <!-- 动态文字 -->
+                </h2>
+                <div class=&quot;flex justify-center gap-4 mt-12 opacity-0&quot; id=&quot;ending-controls&quot;>
+                    <button onclick=&quot;location.reload()&quot; class=&quot;btn-retro px-8 py-3 rounded-lg&quot;>再读一遍</button>
+                </div>
+            </div>
+            <audio id=&quot;ending-audio&quot; src=&quot;https://musk-online.fbcontent.cn/pub-musk-ai-studio/workflow/file/audio/gncwCPzhyL77ZGVCYrFeE6.mp3&quot;></audio>
+        </section>
+    
+        <script type=&quot;module&quot;>
+            // 游戏数据配置
+            const DIALOGUES = [
+                {
+                    speaker: 'walker',
+                    text: '（冷冷地）你叫什么名字？',
+                    action: 'normal'
+                },
+                {
+                    speaker: 'liu',
+                    text: '刘大川。',
+                    action: 'calm'
+                },
+                {
+                    speaker: 'walker',
+                    text: '（目光变得柔和）你是军人！',
+                    action: 'surprise'
+                },
+                {
+                    speaker: 'liu',
+                    text: '（彬彬有礼）沃克医生，这么说你是位了不起的医生。',
+                    action: 'respect'
+                },
+                {
+                    speaker: 'walker',
+                    text: '（生气）我最不愿给不诚实的人看病。你的眼睛告诉我，你是个军人！',
+                    action: 'angry'
+                },
+                {
+                    speaker: 'liu',
+                    text: '（坦诚）是的，我是军人。我需要做眼球摘除手术，但我拒绝使用麻醉剂。',
+                    action: 'firm'
+                },
+                {
+                    speaker: 'walker',
+                    text: '（惊呆了）你疯了吗？你知道那意味着什么吗？',
+                    action: 'shock'
+                }
+            ];
+    
+            class GameController {
+                constructor() {
+                    this.currentScene = 'start';
+                    this.dialogueIndex = 0;
+                    this.knifeCount = 0;
+                    this.totalKnives = 72;
+                    this.isAnimating = false;
+                }
+    
+                start() {
+                    this.switchScene('dialogue');
+                    this.updateDialogue();
+                }
+    
+                switchScene(sceneName) {
+                    // 隐藏所有场景
+                    document.querySelectorAll('.scene').forEach(el => {
+                        el.classList.remove('active');
+                        anime({
+                            targets: el,
+                            opacity: 0,
+                            duration: 300,
+                            easing: 'easeOutQuad'
+                        });
+                    });
+    
+                    // 显示目标场景
+                    const target = document.getElementById(`scene-${sceneName}`);
+                    setTimeout(() => {
+                        target.classList.add('active');
+                        anime({
+                            targets: target,
+                            opacity: [0, 1],
+                            duration: 500,
+                            easing: 'easeOutQuad'
+                        });
+                    }, 300);
+    
+                    this.currentScene = sceneName;
+                }
+    
+                // 对话系统逻辑
+                updateDialogue() {
+                    if (this.dialogueIndex >= DIALOGUES.length) {
+                        this.switchScene('surgery');
+                        return;
+                    }
+    
+                    const data = DIALOGUES[this.dialogueIndex];
+                    const textEl = document.getElementById('dialogue-text');
+                    const walkerImg = document.getElementById('char-walker');
+                    const liuImg = document.getElementById('char-liu');
+    
+                    // 角色焦点切换动画
+                    if (data.speaker === 'walker') {
+                        walkerImg.classList.remove('opacity-50', 'scale-95');
+                        liuImg.classList.add('opacity-50', 'scale-95');
+                    } else {
+                        liuImg.classList.remove('opacity-50', 'scale-95');
+                        walkerImg.classList.add('opacity-50', 'scale-95');
+                    }
+    
+                    // 打字机效果
+                    textEl.innerHTML = '';
+                    anime({
+                        targets: { val: 0 },
+                        val: data.text.length,
+                        duration: data.text.length * 50,
+                        easing: 'linear',
+                        update: function(anim) {
+                            textEl.innerHTML = data.text.substring(0, Math.round(anim.animatables[0].target.val));
+                        }
+                    });
+                }
+    
+                nextDialogue() {
+                    this.dialogueIndex++;
+                    this.updateDialogue();
+                }
+    
+                // 手术游戏逻辑
+                endurePain() {
+                    if (this.knifeCount >= this.totalKnives) return;
+    
+                    this.knifeCount += Math.floor(Math.random() * 3) + 2; // 每次点击增加2-4刀
+                    if (this.knifeCount > this.totalKnives) this.knifeCount = this.totalKnives;
+    
+                    // 更新UI
+                    document.getElementById('knife-count').textContent = this.knifeCount;
+                    
+                    // 更新环形进度条
+                    const circle = document.getElementById('progress-ring');
+                    const radius = circle.r.baseVal.value;
+                    const circumference = radius * 2 * Math.PI;
+                    const offset = circumference - (this.knifeCount / this.totalKnives) * circumference;
+                    circle.style.strokeDashoffset = offset;
+    
+                    // 震动反馈动画
+                    anime({
+                        targets: '#scene-surgery',
+                        translateX: [
+                            { value: -5, duration: 50 },
+                            { value: 5, duration: 50 },
+                            { value: 0, duration: 50 }
+                        ],
+                        easing: 'linear'
+                    });
+    
+                    // 状态文字更新
+                    const statusEl = document.getElementById('surgery-status');
+                    if (this.knifeCount < 20) statusEl.textContent = &quot;额头上汗珠滚滚...&quot;;
+                    else if (this.knifeCount < 50) statusEl.textContent = &quot;双手紧紧抓住床单...&quot;;
+                    else if (this.knifeCount < 70) statusEl.textContent = &quot;床单被抓破了！&quot;;
+                    else statusEl.textContent = &quot;手术结束！&quot;;
+    
+                    // 检查结束
+                    if (this.knifeCount >= this.totalKnives) {
+                        setTimeout(() => this.showEnding(), 1000);
+                    }
+                }
+    
+                showEnding() {
+                    this.switchScene('ending');
+                    const audio = document.getElementById('ending-audio');
+                    const textEl = document.getElementById('ending-text');
+                    const fullText = &quot;了不起！你是一个真正的男子汉，一块会说话的钢板！你是一位军神！&quot;;
+                    
+                    // 播放音频
+                    audio.play().catch(e => console.log(&quot;Audio play failed:&quot;, e));
+    
+                    // 文字动画
+                    textEl.innerHTML = '';
+                    // 将文字拆分为span以便逐字动画
+                    fullText.split('').forEach(char => {
+                        const span = document.createElement('span');
+                        span.textContent = char;
+                        span.style.opacity = '0';
+                        textEl.appendChild(span);
+                    });
+    
+                    anime({
+                        targets: '#ending-text span',
+                        opacity: [0, 1],
+                        translateY: [20, 0],
+                        delay: anime.stagger(150), // 每个字间隔150ms
+                        easing: 'easeOutExpo',
+                        complete: () => {
+                            anime({
+                                targets: '#ending-controls',
+                                opacity: 1,
+                                duration: 1000
+                            });
+                        }
+                    });
+                }
+            }
+    
+            // 初始化游戏
+            window.game = new GameController();
+        </script>
+    </body>
+    </html>

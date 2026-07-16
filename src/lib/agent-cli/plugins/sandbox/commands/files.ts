@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { defineCommand } from "../../../define-command";
-import { formatGrepResult, formatReadWindow, mapSandboxError } from "../shared";
+import {
+  formatGrepResult,
+  formatReadWindow,
+  mapSandboxError,
+  prepareReplaceStrings,
+} from "../shared";
 
 export const sandboxListFiles = defineCommand({
   metadata: {
@@ -291,10 +296,14 @@ export const sandboxReplaceInFile = defineCommand({
   agent: {
     purpose: "外科手术式改文件",
     useWhen: ["局部修改", "改几行或一个符号"],
-    avoidWhen: ["大段重写（用 writeFile）"],
+    avoidWhen: ["大段重写（用 writeFile）", "凭记忆拼 oldString（必先 readFile）"],
     instructions: [
-      "oldString/newString 不要带 readFile 窗口的 LINE| 前缀",
+      "改前立刻 sandbox.readFile；oldString 从刚返回的原文逐字拷贝",
+      "oldString/newString 不要带 readFile 窗口的 LINE| 前缀（命令会尝试自动剥离）",
+      "锚点宜短且唯一（约 3–12 行）；大段重写改用 writeFile",
+      "同文件连续改之前必须重新 readFile（上次 replace 已使旧片段失效）",
       "多处相同替换设 replaceAll=true",
+      "NO_MATCH 后禁止用同一近似 oldString 盲重试：重读 → 更短锚点 → 仍失败则 writeFile",
     ],
     examples: [
       {
@@ -309,8 +318,10 @@ export const sandboxReplaceInFile = defineCommand({
   },
   inputSchema: z.object({
     path: z.string().describe("Relative file path, e.g. src/App.tsx"),
-    oldString: z.string().describe("Exact text to find (no LINE| prefixes)"),
-    newString: z.string().describe("Replacement text"),
+    oldString: z
+      .string()
+      .describe("Exact current file text to find (no LINE| prefixes; copy from latest readFile)"),
+    newString: z.string().describe("Replacement text (no LINE| prefixes)"),
     regex: z.boolean().optional(),
     replaceAll: z.boolean().optional(),
     caseSensitive: z.boolean().optional(),
@@ -320,18 +331,20 @@ export const sandboxReplaceInFile = defineCommand({
     maxAutoRetries: 1,
     errors: {
       NO_MATCH: {
-        description: "未找到 oldString",
+        description: "未找到 oldString（文件无此精确片段）",
         retryable: true,
         suggestions: [
-          "sandbox.readFile 确认当前内容",
-          "去掉 LINE| 前缀后重试",
+          "立刻 sandbox.readFile 该 path，从最新内容逐字拷贝更短锚点",
+          "确认无 LINE| 前缀、缩进/引号与原文一致",
+          "仍失败则对该文件 sandbox.writeFile 全文覆盖，勿第三次硬撞",
         ],
       },
     },
   },
   async execute(input, ctx) {
     try {
-      return ctx.sandbox.replace(input.path, input.oldString, input.newString, {
+      const prepared = prepareReplaceStrings(input.oldString, input.newString);
+      return ctx.sandbox.replace(input.path, prepared.oldString, prepared.newString, {
         regex: input.regex,
         replaceAll: input.replaceAll,
         caseSensitive: input.caseSensitive,
@@ -357,7 +370,7 @@ export const sandboxApplyOperations = defineCommand({
     instructions: [
       "单文件优先用 sandbox.replaceInFile，不要滥用 applyOperations",
       "operations[].type 只能是 write | add | remove | replace（不要写 writeFile/replaceInFile）",
-      "replace 项必须带 path + oldString + newString",
+      "replace 项必须带 path + oldString + newString；oldString 同 replaceInFile 规则（先读、无 LINE|、短锚点）",
     ],
     examples: [
       {
@@ -414,7 +427,12 @@ export const sandboxApplyOperations = defineCommand({
   safety: { risk: "write", sideEffect: true, idempotent: false, confirmation: "on-write" },
   async execute(input, ctx) {
     try {
-      return ctx.sandbox.apply(input.operations);
+      const operations = input.operations.map((op) => {
+        if (op.type !== "replace") return op;
+        const prepared = prepareReplaceStrings(op.oldString, op.newString);
+        return { ...op, oldString: prepared.oldString, newString: prepared.newString };
+      });
+      return ctx.sandbox.apply(operations);
     } catch (e) {
       mapSandboxError(e);
     }

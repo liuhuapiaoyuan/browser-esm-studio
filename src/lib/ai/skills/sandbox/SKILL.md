@@ -8,7 +8,7 @@
 
 所有项目文件操作都必须通过 `cli_execute` 调度下方 `sandbox.*` 命令。不要假设存在宿主文件系统、shell 或本地 `node_modules`。
 
-路径一律相对路径（如 `src/App.tsx`）。窗口读取带 `LINE|` 前缀；用于 `oldString` / `newString` 时必须去掉。
+路径一律相对路径（如 `src/App.tsx`）。窗口读取带 `LINE|` 前缀；用于 `oldString` / `newString` 时必须去掉（命令层也会尽量自动剥离，但不要依赖）。
 
 ---
 
@@ -74,9 +74,38 @@
 
 ---
 
+## `replaceInFile` 硬规则（防 `NO_MATCH`）
+
+`oldString` 必须是文件里**当前存在**的逐字片段。近似、凭记忆、或带行号前缀都会 `NO_MATCH`。
+
+### 改前
+
+1. **先读再改**：对目标文件 `readFile`（或 `grep` → `readFile(around=命中行)`），从**刚返回的内容**拷贝 `oldString`，禁止用更早轮次/计划里的旧片段。
+2. **去掉 `LINE|`**：窗口读形如 `  42|  const x = 1` → `oldString` 只能是 `  const x = 1`（含原缩进）。
+3. **锚点宜短且唯一**：优先 3–12 行、含独特标识（函数名/JSX 标签/字符串字面量）。整段大块重写易因空白/逗号漂移失败。
+4. **空白必须一致**：缩进、引号、尾逗号、换行与原文一致；不要“整理格式”后再当 `oldString`。
+5. **同文件连续改**：上一次 `replace` 已改过的内容，下一次必须重新 `readFile` 再取新 `oldString`。
+
+### 选择写策略
+
+| 场景 | 用法 |
+|------|------|
+| 改几行 / 一个符号 | `replaceInFile`，小锚点 |
+| 同串多处都要改 | `replaceAll: true` |
+| 大段重写（>约 40 行）或结构大变 | 对该文件 `writeFile` 全文覆盖（先 `readFile` 全文再改） |
+| 跨文件必须一起成功 | `applyOperations` |
+
+### `NO_MATCH` 恢复（只按序做一轮，禁止盲重试同一 `oldString`）
+
+1. `sandbox.readFile` 该 path（窗口或全文）拿**最新**原文。
+2. 用更短、更独特的锚点重拼 `oldString`（仍无 `LINE|`）。
+3. 仍失败：对该文件改用 `writeFile`（小文件）或缩小改动范围；不要第三次用近似字符串硬撞。
+
+---
+
 ## 工作流（简）
 
-1. `listFiles` / `grep`(files) → `grep`(content) → `readFile`(around) → 再改
+1. `listFiles` / `grep`(files) → `grep`(content) → `readFile`(around) → **立刻** `replaceInFile`（`oldString` 来自刚读到的原文）
 2. 单文件小改 `replaceInFile`；新文件 `addFile`；全文覆盖才 `writeFile`；跨文件一致性用 `applyOperations`
 3. 改完：`typecheck`；影响 Preview 时再 `getPreviewErrors`（`wait=true`）
 4. 用简短中文说明改了什么

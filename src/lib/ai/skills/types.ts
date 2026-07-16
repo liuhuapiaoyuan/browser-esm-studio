@@ -6,6 +6,10 @@ export type SkillSummary = {
   id: SkillId;
   title: string;
   description: string;
+  /** CDN cover URL for skill store cards (never base64). */
+  icon: string;
+  /** Short red motto under the title, matching educational card tone. */
+  motto: string;
   requires: SkillId[];
   defaultEnabled: boolean;
 };

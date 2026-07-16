@@ -1,0 +1,359 @@
+<iframe title="玩转互动课件 · 必看小技巧.html" srcdoc="<!DOCTYPE html>
+    <html lang=&quot;zh-CN&quot;>
+    <head>
+    <meta http-equiv=&quot;Content-Security-Policy&quot; content=&quot;img-src 'self' data: blob: https://*.fbcontent.cn https://*.aliyuncs.com https://storage.googleapis.com; media-src 'self' data: blob: https://*.fbcontent.cn https://*.aliyuncs.com https://storage.googleapis.com;&quot;>
+      <meta charset=&quot;UTF-8&quot;>
+      <meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1.0&quot;>
+      <title>玩转互动课件 · 必看小技巧</title>
+    </head>
+    <body>
+    
+    <div id=&quot;cw-loading&quot; style=&quot;display:flex;align-items:center;justify-content:center;height:100vh;font-family:system-ui,sans-serif;font-size:18px;color:#999;&quot;>
+      正在生成您的互动课件...
+    </div>
+    
+    <template class=&quot;page-shared&quot;>
+      <script src=&quot;https://metis-online.fbcontent.cn/metis-misc/zgLDUdmazTYc0B4K6Cor.js&quot;></script>
+      <script src=&quot;https://metis-online.fbcontent.cn/metis-misc/zZZY40t7WJC7UdQCPACm.js&quot;></script>
+      <link href=&quot;https://fonts.googleapis.com/css2?family=Nunito:wght@400;700&amp;family=Noto+Sans+SC:wght@400;700&amp;display=swap&quot; rel=&quot;stylesheet&quot;>
+      <style>
+        :root {
+          --bg: #fffbf0;
+          --ink: #1a1a0f;
+          --green: #2D7A4F;
+          --green-d: #1f5a39;
+          --green-l: rgba(45,122,79,.1);
+          --gold: #e8a020;
+          --border: rgba(26,26,15,.1);
+          --font: 'Nunito', 'Noto Sans SC', sans-serif;
+        }
+        body {
+          font-family: var(--font);
+          background-color: var(--bg);
+          color: var(--ink);
+          overflow: hidden;
+        }
+        .card {
+          background: #ffffff;
+          border: 1px solid var(--border);
+          border-radius: 16px;
+          box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+        }
+        .title-lg { font-size: 42px; font-weight: 700; color: var(--green); }
+        .title-md { font-size: 32px; font-weight: 700; color: var(--green); margin-bottom: 20px; }
+        .text-p { font-size: 18px; line-height: 1.6; color: var(--ink); }
+        .btn-primary {
+          background-color: var(--green);
+          color: white;
+          padding: 12px 24px;
+          border-radius: 99px;
+          font-weight: 700;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+        .btn-primary:hover { background-color: var(--green-d); transform: translateY(-2px); }
+      </style>
+    </template>
+    
+    <template class=&quot;page-data&quot; data-id=&quot;1&quot; data-name=&quot;封面&quot;>
+      <style>
+        .slide-1 { 
+          background: radial-gradient(circle at top right, var(--green-l), transparent), var(--bg);
+          height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;
+        }
+        .cover-img { width: 300px; height: auto; margin-bottom: 30px; animation: float 3s ease-in-out infinite; }
+        @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+      </style>
+      <div class=&quot;slide-1 p-10&quot;>
+        <img src=&quot;https://musk-online.fbcontent.cn/pub-musk-ai-studio/workflow/file/picture/Uj4RqhXxzVvCgLRkt4NWLT.jpg&quot; class=&quot;cover-img card&quot; alt=&quot;封面图&quot;>
+        <h1 class=&quot;title-lg&quot;>玩转互动课件 · 必看小技巧</h1>
+        <p class=&quot;text-p mt-4 opacity-70&quot;>飞象老师 · AI 互动课件实测手册</p>
+        <div class=&quot;mt-8 btn-primary&quot; onclick=&quot;window.parent.postMessage({type:'nextPage'}, '*')&quot;>点击开始探索 →</div>
+      </div>
+    </template>
+    
+    <template class=&quot;page-data&quot; data-id=&quot;2&quot; data-name=&quot;互动课件是什么&quot;>
+      <style>
+        .diff-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 30px; }
+        .diff-card { padding: 20px; border-left: 6px solid var(--border); transition: all 0.3s; }
+        .diff-card.active { border-left-color: var(--green); background: var(--green-l); }
+      </style>
+      <div class=&quot;p-10&quot;>
+        <h2 class=&quot;title-md&quot;>互动课件是什么？</h2>
+        <div class=&quot;diff-grid&quot;>
+          <div id=&quot;card-static&quot; class=&quot;card diff-card active&quot;>
+            <h3 class=&quot;font-bold text-xl mb-2&quot;>传统 PPT</h3>
+            <ul class=&quot;text-p list-disc ml-5 space-y-2&quot;>
+              <li>单向展示，学生被动看</li>
+              <li>内容固定，难以实时变化</li>
+              <li>课后无数据，不知道谁会了</li>
+            </ul>
+          </div>
+          <div id=&quot;card-dynamic&quot; class=&quot;card diff-card&quot;>
+            <h3 class=&quot;font-bold text-xl mb-2 text-green-700&quot;>AI 互动课件</h3>
+            <ul class=&quot;text-p list-disc ml-5 space-y-2&quot;>
+              <li>多页结构，像 PPT 一样翻页</li>
+              <li>主动操作，学生能点、能拖</li>
+              <li>数据回收，作答情况实时统计</li>
+            </ul>
+          </div>
+        </div>
+        <div class=&quot;mt-10 text-center&quot;>
+          <img src=&quot;https://musk-online.fbcontent.cn/pub-musk-ai-studio/workflow/file/picture/jD3QzqKvYU7gQVveppeYJo.jpg&quot; class=&quot;h-32 mx-auto rounded-lg&quot; alt=&quot;对比图&quot;>
+        </div>
+      </div>
+      <script>
+        let step = 0;
+        document.body.onclick = () => {
+          step++;
+          if(step === 1) {
+            document.getElementById('card-static').classList.remove('active');
+            document.getElementById('card-dynamic').classList.add('active');
+            anime({ targets: '#card-dynamic', scale: [1, 1.05, 1], duration: 800 });
+          }
+        }
+      </script>
+    </template>
+    
+    <template class=&quot;page-data&quot; data-id=&quot;3&quot; data-name=&quot;核心能力&quot;>
+      <div class=&quot;p-10 h-full flex flex-column justify-center&quot;>
+        <h2 class=&quot;title-md&quot;>互动课件的核心能力</h2>
+        <div class=&quot;grid grid-cols-3 gap-6 mt-6&quot;>
+          <div class=&quot;card p-6 flex flex-col items-center text-center hover:shadow-lg transition&quot;>
+            <div class=&quot;w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mb-4&quot;>🎬</div>
+            <h3 class=&quot;font-bold mb-2&quot;>可视化讲解</h3>
+            <p class=&quot;text-sm opacity-70&quot;>3D动画、动态几何<br>让抽象变直观</p>
+          </div>
+          <div class=&quot;card p-6 flex flex-col items-center text-center hover:shadow-lg transition&quot;>
+            <div class=&quot;w-12 h-12 bg-gold-100 rounded-full flex items-center justify-center mb-4&quot; style=&quot;background:rgba(232,160,32,0.1)&quot;>🎮</div>
+            <h3 class=&quot;font-bold mb-2&quot;>游戏化练习</h3>
+            <p class=&quot;text-sm opacity-70&quot;>闯关、拖拽、连线<br>激发学生热情</p>
+          </div>
+          <div class=&quot;card p-6 flex flex-col items-center text-center hover:shadow-lg transition&quot;>
+            <div class=&quot;w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mb-4&quot; style=&quot;background:rgba(42,95,200,0.1)&quot;>📊</div>
+            <h3 class=&quot;font-bold mb-2&quot;>即时反馈</h3>
+            <p class=&quot;text-sm opacity-70&quot;>实时批改、数据看板<br>精准掌握学情</p>
+          </div>
+        </div>
+      </div>
+    </template>
+    
+    <template class=&quot;page-data&quot; data-id=&quot;4&quot; data-name=&quot;入口指引&quot;>
+      <style>
+        .step-item { display: flex; align-items: center; margin-bottom: 25px; opacity: 0; transform: translateX(-20px); }
+        .step-num { width: 36px; height: 36px; background: var(--green); color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 15px; font-weight: bold; flex-shrink: 0; }
+      </style>
+      <div class=&quot;p-10&quot;>
+        <h2 class=&quot;title-md&quot;>从哪里开始制作？</h2>
+        <div class=&quot;flex gap-10&quot;>
+          <div class=&quot;w-1/2 space-y-4 pt-4&quot;>
+            <div class=&quot;step-item&quot; id=&quot;s1&quot;><div class=&quot;step-num&quot;>1</div><p class=&quot;text-p&quot;>打开飞象老师官网 (feixianglaoshi.com)</p></div>
+            <div class=&quot;step-item&quot; id=&quot;s2&quot;><div class=&quot;step-num&quot;>2</div><p class=&quot;text-p&quot;>点击首页最显眼的<b>「互动课件」</b>图标</p></div>
+            <div class=&quot;step-item&quot; id=&quot;s3&quot;><div class=&quot;step-num&quot;>3</div><p class=&quot;text-p&quot;>上传教案或直接输入你的奇思妙想</p></div>
+            <p class=&quot;mt-6 text-sm text-red-600 font-bold opacity-0&quot; id=&quot;tip&quot;>⚠️ 注意：不要在普通 AI 对话框里直接写，那里生成的是代码，不是课件！</p>
+          </div>
+          <div class=&quot;w-1/2 flex items-center justify-center&quot;>
+            <div class=&quot;card p-4 bg-white shadow-xl rotate-3&quot;>
+              <div class=&quot;w-64 h-40 bg-gray-100 rounded flex items-center justify-center text-3xl&quot;>🖱️</div>
+              <p class=&quot;mt-2 text-center text-sm font-bold&quot;>互动课件入口</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <script>
+        anime({
+          targets: '.step-item',
+          opacity: 1,
+          translateX: 0,
+          delay: anime.stagger(800),
+          complete: () => { anime({ targets: '#tip', opacity: 1, duration: 1000 }); }
+        });
+      </script>
+    </template>
+    
+    <template class=&quot;page-data&quot; data-id=&quot;5&quot; data-name=&quot;首轮提示词&quot;>
+      <div class=&quot;p-10&quot;>
+        <h2 class=&quot;title-md&quot;>首轮提示词怎么写？</h2>
+        <p class=&quot;text-p mb-6&quot;>想跳过繁琐的确认环节？记住这个<b>“三要素”</b>公式：</p>
+        <div class=&quot;grid grid-cols-3 gap-4&quot; id=&quot;elements&quot;>
+          <div class=&quot;card p-4 text-center bg-green-50&quot;>
+            <div class=&quot;text-2xl mb-2&quot;>📍</div>
+            <div class=&quot;font-bold&quot;>基本信息</div>
+            <div class=&quot;text-xs opacity-60 mt-1&quot;>年级、学科、课题</div>
+          </div>
+          <div class=&quot;card p-4 text-center bg-green-50&quot;>
+            <div class=&quot;text-2xl mb-2&quot;>📑</div>
+            <div class=&quot;font-bold&quot;>教学环节</div>
+            <div class=&quot;text-xs opacity-60 mt-1&quot;>导入、新授、练习</div>
+          </div>
+          <div class=&quot;card p-4 text-center bg-green-50&quot;>
+            <div class=&quot;text-2xl mb-2&quot;>🖱️</div>
+            <div class=&quot;font-bold&quot;>互动需求</div>
+            <div class=&quot;text-xs opacity-60 mt-1&quot;>具体哪一页要怎么动</div>
+          </div>
+        </div>
+        <div class=&quot;mt-8 card p-4 border-dashed border-2 bg-yellow-50 relative overflow-hidden group cursor-pointer&quot; onclick=&quot;this.classList.toggle('flipped')&quot;>
+          <div class=&quot;prompt-content&quot;>
+            <p class=&quot;font-bold text-sm text-gray-500 mb-1&quot;>💡 示例模板（点击翻转看解析）</p>
+            <p class=&quot;text-p italic&quot;>“帮我做一份<b>六年级数学《圆柱体积》</b>的课件，要有<b>3D推导动画</b>，最后加一个<b>体积计算闯关</b>游戏。”</p>
+          </div>
+          <img src=&quot;https://musk-online.fbcontent.cn/pub-musk-ai-studio/workflow/file/picture/Tpj2G94LhYEgzwUYfk8B87.jpg&quot; class=&quot;absolute -right-10 -bottom-10 w-40 opacity-20 grayscale&quot;>
+        </div>
+      </div>
+    </template>
+    
+    <template class=&quot;page-data&quot; data-id=&quot;6&quot; data-name=&quot;互动类型全览&quot;>
+      <div class=&quot;p-10&quot;>
+        <h2 class=&quot;title-md&quot;>常用的互动类型有哪些？</h2>
+        <div class=&quot;grid grid-cols-2 gap-4&quot;>
+          <div class=&quot;card p-4 flex gap-4 items-center&quot;>
+            <span class=&quot;text-3xl&quot;>🧩</span>
+            <div><h4 class=&quot;font-bold&quot;>学生操作类</h4><p class=&quot;text-xs opacity-60&quot;>拖拽排序、连线配对、拼图</p></div>
+          </div>
+          <div class=&quot;card p-4 flex gap-4 items-center&quot;>
+            <span class=&quot;text-3xl&quot;>🙋</span>
+            <div><h4 class=&quot;font-bold&quot;>课堂组织类</h4><p class=&quot;text-xs opacity-60&quot;>随机点名、分组竞争、投票</p></div>
+          </div>
+          <div class=&quot;card p-4 flex gap-4 items-center&quot;>
+            <span class=&quot;text-3xl&quot;>📝</span>
+            <div><h4 class=&quot;font-bold&quot;>数据收集类</h4><p class=&quot;text-xs opacity-60&quot;>随堂小测、反馈表、问卷</p></div>
+          </div>
+          <div class=&quot;card p-4 flex gap-4 items-center border-2 border-dashed&quot;>
+            <span class=&quot;text-3xl&quot;>🪄</span>
+            <div><h4 class=&quot;font-bold&quot;>更多可能...</h4><p class=&quot;text-xs opacity-60&quot;>由你的创意驱动生成</p></div>
+          </div>
+        </div>
+        <div class=&quot;mt-6 p-4 bg-green-50 rounded-xl text-sm border-l-4 border-green-600&quot;>
+          <b>💡 黄金法则：</b>一节课建议安排 <b>2-3 个</b> 强互动环节，多而不精容易分散注意力。
+        </div>
+      </div>
+    </template>
+    
+    <template class=&quot;page-data&quot; data-id=&quot;7&quot; data-name=&quot;素材提交技巧&quot;>
+      <div class=&quot;p-10&quot;>
+        <h2 class=&quot;title-md&quot;>给 AI “喂”素材的小技巧</h2>
+        <div class=&quot;space-y-4&quot;>
+          <div class=&quot;flex items-start gap-4 p-4 card hover:bg-green-50 transition&quot;>
+            <div class=&quot;text-xl&quot;>📄</div>
+            <div>
+              <h4 class=&quot;font-bold&quot;>完整教案最省心</h4>
+              <p class=&quot;text-sm opacity-70&quot;>直接上传 word 或 pdf，AI 会自动按环节生成课件，最精准。</p>
+            </div>
+          </div>
+          <div class=&quot;flex items-start gap-4 p-4 card hover:bg-green-50 transition&quot;>
+            <div class=&quot;text-xl&quot;>🖼️</div>
+            <div>
+              <h4 class=&quot;font-bold&quot;>课本图片直接拍</h4>
+              <p class=&quot;text-sm opacity-70&quot;>拍下教材页面上传，输入“根据图片生成课件”，AI 能识别考点。</p>
+            </div>
+          </div>
+          <div class=&quot;flex items-start gap-4 p-4 card hover:bg-green-50 transition&quot;>
+            <div class=&quot;text-xl&quot;>✂️</div>
+            <div>
+              <h4 class=&quot;font-bold&quot;>长文章要分段</h4>
+              <p class=&quot;text-sm opacity-70&quot;>如果文章特别长，建议先生成大纲，再针对每页内容微调。</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
+    
+    <template class=&quot;page-data&quot; data-id=&quot;8&quot; data-name=&quot;单页打磨技巧&quot;>
+      <div class=&quot;p-10&quot;>
+        <h2 class=&quot;title-md&quot;>单页打磨的两大“绝招”</h2>
+        <div class=&quot;flex gap-6&quot;>
+          <div class=&quot;w-1/2 flex flex-col gap-4&quot;>
+            <div class=&quot;card p-4 border-l-4 border-gold&quot;>
+              <h4 class=&quot;font-bold text-gold&quot;>绝招 1：点名修改</h4>
+              <p class=&quot;text-sm mt-2 italic&quot;>“把第 5 页的背景换成深蓝色，图片调大一点。”</p>
+              <p class=&quot;text-xs mt-2 opacity-60&quot;>针对性修改比全局重做效率高得多！</p>
+            </div>
+            <div class=&quot;card p-4 border-l-4 border-green-600&quot;>
+              <h4 class=&quot;font-bold text-green-600&quot;>绝招 2：教学动画插入</h4>
+              <p class=&quot;text-sm mt-2 italic&quot;>“在第 3 页插入一个勾股定理的 3D 可视化动画。”</p>
+              <p class=&quot;text-xs mt-2 opacity-60&quot;>专业的事交给专业的模型去做。</p>
+            </div>
+          </div>
+          <div class=&quot;w-1/2&quot;>
+            <img src=&quot;https://musk-online.fbcontent.cn/pub-musk-ai-studio/workflow/file/picture/QDUS7SWevjqfG4cLK9VYMY.jpg&quot; class=&quot;card w-full h-full object-cover&quot; alt=&quot;打磨示意图&quot;>
+          </div>
+        </div>
+      </div>
+    </template>
+    
+    <template class=&quot;page-data&quot; data-id=&quot;9&quot; data-name=&quot;进阶提示词&quot;>
+      <div class=&quot;p-10&quot;>
+        <h2 class=&quot;title-md&quot;>进阶：让 AI 变成课件专家</h2>
+        <div class=&quot;grid grid-cols-2 gap-6&quot;>
+          <div class=&quot;card p-5 bg-white shadow-sm hover:shadow-md transition&quot;>
+            <h4 class=&quot;font-bold text-red-500 mb-3&quot;>❌ 避坑指南</h4>
+            <ul class=&quot;text-sm space-y-3 opacity-70&quot;>
+              <li>不要只说“美化一下”</li>
+              <li>不要同时下 10 个指令</li>
+              <li>不要在普通对话框问技术问题</li>
+            </ul>
+          </div>
+          <div class=&quot;card p-5 bg-green-50 border border-green-200&quot;>
+            <h4 class=&quot;font-bold text-green-700 mb-3&quot;>✅ 进阶公式</h4>
+            <ul class=&quot;text-sm space-y-3&quot;>
+              <li><b>设定身份：</b>“请作为资深教学设计师...”</li>
+              <li><b>正向描述：</b>用“我要XX”代替“不要XX”</li>
+              <li><b>一次一件事：</b>每一轮只改一个核心点</li>
+            </ul>
+          </div>
+        </div>
+        <p class=&quot;mt-8 text-center text-p font-bold text-green-800&quot;>好的提示词是高质量课件的“导航仪”。</p>
+      </div>
+    </template>
+    
+    <template class=&quot;page-data&quot; data-id=&quot;10&quot; data-name=&quot;全流程梳理&quot;>
+      <div class=&quot;p-10&quot;>
+        <h2 class=&quot;title-md&quot;>总结：互动课件制作 4 步走</h2>
+        <div class=&quot;relative flex justify-between items-center mt-10&quot;>
+          <div class=&quot;absolute top-1/2 left-0 w-full h-1 bg-green-100 -z-10&quot;></div>
+          <div class=&quot;flex flex-col items-center gap-3&quot;>
+            <div class=&quot;w-14 h-14 rounded-full bg-green-600 text-white flex items-center justify-center font-bold shadow-lg&quot;>1</div>
+            <p class=&quot;text-sm font-bold&quot;>准备素材</p>
+          </div>
+          <div class=&quot;flex flex-col items-center gap-3&quot;>
+            <div class=&quot;w-14 h-14 rounded-full bg-green-600 text-white flex items-center justify-center font-bold shadow-lg&quot;>2</div>
+            <p class=&quot;text-sm font-bold&quot;>入口提交</p>
+          </div>
+          <div class=&quot;flex flex-col items-center gap-3&quot;>
+            <div class=&quot;w-14 h-14 rounded-full bg-green-600 text-white flex items-center justify-center font-bold shadow-lg&quot;>3</div>
+            <p class=&quot;text-sm font-bold&quot;>首轮确认</p>
+          </div>
+          <div class=&quot;flex flex-col items-center gap-3&quot;>
+            <div class=&quot;w-14 h-14 rounded-full bg-green-600 text-white flex items-center justify-center font-bold shadow-lg&quot;>4</div>
+            <p class=&quot;text-sm font-bold&quot;>逐页打磨</p>
+          </div>
+        </div>
+        <div class=&quot;mt-12 flex justify-center&quot;>
+          <img src=&quot;https://musk-online.fbcontent.cn/pub-musk-ai-studio/workflow/file/picture/V7tXJ9Vpn9jUfjjezqeqJB.jpg&quot; class=&quot;h-24 opacity-80&quot; alt=&quot;清单图&quot;>
+        </div>
+      </div>
+    </template>
+    
+    <template class=&quot;page-data&quot; data-id=&quot;11&quot; data-name=&quot;答疑与交流&quot;>
+      <div class=&quot;p-10 flex flex-col items-center justify-center text-center&quot;>
+        <h2 class=&quot;title-md&quot;>老师，您学会了吗？</h2>
+        <p class=&quot;text-p mb-8 opacity-70&quot;>互动课件的魅力，在于让每一位学生都成为课堂的主角。</p>
+        
+        <div class=&quot;card p-8 w-full max-w-md bg-white&quot;>
+          <h4 class=&quot;font-bold mb-4&quot;>有任何疑问，欢迎随时提问！</h4>
+          <div class=&quot;space-y-4&quot;>
+            <textarea class=&quot;w-full p-3 border rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none&quot; placeholder=&quot;输入您的反馈或困惑...&quot; rows=&quot;3&quot;></textarea>
+            <button class=&quot;btn-primary w-full&quot; onclick=&quot;alert('反馈已收到，老师加油！')&quot;>提交反馈</button>
+          </div>
+        </div>
+        
+        <p class=&quot;mt-8 text-xs opacity-40&quot;>© 2026 飞象老师 · 教育 AI 指南</p>
+      </div>
+    </template>
+    
+    <!-- CW_PAGES -->
+    
+    <script src=&quot;https://musk-online.fbcontent.cn/pub-musk-ai-studio/user/upload/admin/m6azhRVhvHd74GnTkrMdA7.js&quot;></script>
+    
+    </body>
+    </html>" class="musk-html-preview-iframe" sandbox="allow-scripts allow-same-origin"></iframe>

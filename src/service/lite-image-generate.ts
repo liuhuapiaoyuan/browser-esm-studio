@@ -12,7 +12,8 @@
 export const LITE_IMAGE_DEFAULT_BASE_URL = 'https://api.siliconflow.cn/v1'
 /** 浏览器默认：Vite `/lite-image-proxy` → SiliconFlow */
 export const LITE_IMAGE_BROWSER_BASE_URL = '/lite-image-proxy/v1'
-export const LITE_IMAGE_DEFAULT_MODEL = 'Kwai-Kolors/Kolors'
+export const LITE_IMAGE_DEFAULT_MODEL = 'Tongyi-MAI/Z-Image-Turbo'
+//export const LITE_IMAGE_DEFAULT_MODEL = 'Kwai-Kolors/Kolors'
 export const LITE_IMAGE_DEFAULT_IMAGE_SIZE = '1024x1024'
 
 function readEnv(...keys: string[]): string {

@@ -16,7 +16,7 @@ import {
   listReferenceHtmlPaths,
   REFERENCE_SIZE_WARN_BYTES,
 } from "./lib/reference-html";
-import { createSandbox, SandboxError, type Sandbox } from "./lib/sandbox";
+import { createSandbox, SandboxError, type Sandbox, type SandboxOperation } from "./lib/sandbox";
 import {
   ensureDdbProject,
   ensureDdbStack,
@@ -1096,6 +1096,7 @@ export function App() {
   const [typechecking, setTypechecking] = useState(false);
   const [pickMode, setPickMode] = useState(false);
   const [mobilePreviewOpen, setMobilePreviewOpen] = useState(false);
+  const [projectKey, setProjectKey] = useState(0);
   const agentSubmitRef = useRef<((text: string) => void) | null>(null);
 
   function openMobilePreview() {
@@ -1255,6 +1256,50 @@ export function App() {
     });
   };
 
+  function createNewProject() {
+    if (
+      !window.confirm(
+        "确定创建新工程？当前虚拟项目将重置为默认模板，聊天记录也会清空，此操作不可撤销。",
+      )
+    ) {
+      return;
+    }
+
+    const current = sandbox.snapshot;
+    const operations: SandboxOperation[] = [];
+    for (const path of Object.keys(current)) {
+      if (!(path in DEFAULT_FILES)) {
+        operations.push({ type: "remove", path });
+      }
+    }
+    for (const [path, content] of Object.entries(DEFAULT_FILES)) {
+      operations.push({ type: "write", path, content });
+    }
+    sandbox.apply(operations);
+
+    setActiveFile("src/App.tsx");
+    setMode("preview");
+    setPickMode(false);
+    setShowConsole(false);
+    previewConsole.clear();
+    setProjectKey((value) => value + 1);
+
+    void (async () => {
+      try {
+        const projectId = await ensureDdbProject();
+        ensureDdbStack(sandbox, {
+          projectId,
+          userId: getDynamicDbUserId(),
+          roles: resolveDynamicDbUserRoles(),
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn("[ddb] ensure failed after new project:", message);
+        previewConsole.push("warn", `Dynamic DB 初始化失败: ${message}`);
+      }
+    })();
+  }
+
   async function runTypecheck() {
     if (typechecking) return;
     setTypechecking(true);
@@ -1289,6 +1334,7 @@ export function App() {
   return (
     <div className="studio-shell">
       <ChatPanel
+        key={projectKey}
         sandbox={sandbox}
         getFiles={() => files}
         submitRef={agentSubmitRef}
@@ -1329,6 +1375,9 @@ export function App() {
           <div className="workspace-actions">
             <button className="ghost-button" disabled={typechecking} onClick={() => void runTypecheck()} title="浏览器内 TypeScript 检查">
               <Icon name="check" size={15} />{typechecking ? "检查中…" : "类型检查"}
+            </button>
+            <button className="ghost-button" onClick={createNewProject} title="重置为默认模板并清空聊天">
+              <Icon name="plus" size={15} />创建新工程
             </button>
             <button className="publish-button" onClick={exportZip}><Icon name="download" size={15} />导出 ZIP</button>
           </div>

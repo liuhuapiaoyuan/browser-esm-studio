@@ -5,6 +5,41 @@ export const MAX_PER_FILE = 20;
 export const MAX_READ_WINDOW = 200;
 export const DEFAULT_READ_RADIUS = 40;
 
+/** Matches `formatReadWindow` prefixes like `  42|` / `1234|`. */
+const READ_WINDOW_LINE_PREFIX = /^\s*\d+\|/;
+
+/**
+ * If every non-empty line looks like a windowed `readFile` line (`LINE|…`),
+ * strip the prefixes so replace oldString/newString can match file content.
+ * Leaves text unchanged when mixed or unprefixed.
+ */
+export function stripReadWindowPrefixes(text: string): {
+  text: string;
+  stripped: boolean;
+} {
+  if (!text.includes("|")) return { text, stripped: false };
+  const lines = text.split("\n");
+  const candidates = lines.filter((line) => line.length > 0);
+  if (candidates.length === 0) return { text, stripped: false };
+  if (!candidates.every((line) => READ_WINDOW_LINE_PREFIX.test(line))) {
+    return { text, stripped: false };
+  }
+  return {
+    text: lines.map((line) => line.replace(READ_WINDOW_LINE_PREFIX, "")).join("\n"),
+    stripped: true,
+  };
+}
+
+export function prepareReplaceStrings(oldString: string, newString: string) {
+  const oldPrepared = stripReadWindowPrefixes(oldString);
+  const newPrepared = stripReadWindowPrefixes(newString);
+  return {
+    oldString: oldPrepared.text,
+    newString: newPrepared.text,
+    strippedPrefixes: oldPrepared.stripped || newPrepared.stripped,
+  };
+}
+
 export function mapSandboxError(error: unknown): never {
   if (error instanceof AgentCliCommandError) throw error;
   if (error instanceof SandboxError) {
@@ -24,7 +59,11 @@ export function mapSandboxError(error: unknown): never {
       details: { sandboxCode: error.code, path: error.path },
       suggestions:
         error.code === "NO_MATCH"
-          ? ["用 sandbox.readFile 确认原文后重试 sandbox.replaceInFile"]
+          ? [
+              "立刻 sandbox.readFile 该 path，从最新返回内容逐字拷贝 oldString（去掉 LINE| 前缀）",
+              "缩短为 3–12 行独特锚点后重试一次；仍失败则对该文件改用 writeFile",
+              "禁止用同一近似 oldString 盲重试",
+            ]
           : error.code === "NOT_FOUND"
             ? ["先 sandbox.listFiles 或 sandbox.grep 确认路径"]
             : undefined,

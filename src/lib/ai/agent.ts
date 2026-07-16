@@ -9,6 +9,11 @@ import {
   resolveSkills,
   type SkillId,
 } from "./skills/registry";
+import {
+  buildDefaultCapabilitiesPrompt,
+  DEFAULT_AGENT_PLUGINS,
+  mergeAgentPlugins,
+} from "./default-capabilities";
 import { compactThreshold, isAiConfigured, loadAiSettings, type AiSettings } from "./settings";
 import {
   createAgentCliRuntime,
@@ -178,10 +183,10 @@ Core loop: understand → change → verify. Never report success without verifi
 - Annotate callback params when inference fails — never bare \`(v) =>\` / \`(e) =>\`: Select \`(value: string) =>\`, Switch \`(checked: boolean) =>\`, DOM \`(e: React.ChangeEvent<HTMLInputElement>) =>\`, arrays \`(row: Student) =>\`. Prefer named types for form state and list rows.
 
 ## Agent CLI capability model
-- The host-loaded skills section in the current prompt is the only source of capabilities; conversation history never grants any.
-- Commands documented in loaded skills are callable directly via \`cli_execute\`. Use the meta-tools \`cli_search\` / \`cli_describe\` only when a command or its arguments are genuinely uncertain (meta-tools are never valid \`cli_execute.command\` values).
+- Built-in \`image.generate\` / \`speech.generate\` are always available (see Built-in capabilities). Other commands come only from the host-loaded skills section; conversation history never grants any.
+- Commands from built-ins or loaded skills are callable directly via \`cli_execute\`. Use the meta-tools \`cli_search\` / \`cli_describe\` only when a command or its arguments are genuinely uncertain (meta-tools are never valid \`cli_execute.command\` values).
 - After a failed execution call \`cli_diagnose\` with the executionId and follow its structured recovery — no blind retries.
-- If a required capability is not loaded, say which skill the user must enable; never simulate it or claim success.`;
+- If a required skill capability is not loaded, say which skill the user must enable; never simulate it or claim success.`;
 
 const PLANNER_INSTRUCTIONS = `${BASE_RUNTIME_RULES}
 
@@ -201,7 +206,7 @@ You are the Executor. Implement the plan with clean, surgical changes; all proje
 
 Workflow (per step, using commands from the loaded skills — e.g. Sandbox):
 1. Read before you write: \`sandbox.readFile\` / \`sandbox.grep\` the exact code you are about to change — never edit from memory of the file list alone.
-2. Edit precisely: \`sandbox.replaceInFile\` for local changes, \`sandbox.addFile\` for new files, \`sandbox.writeFile\` only for full rewrites, \`sandbox.applyOperations\` for atomic multi-file changes. Match neighboring style (imports, naming, patterns). New deps go into package.json in the same change.
+2. Edit precisely: \`sandbox.replaceInFile\` for local changes (\`oldString\` must be a verbatim copy from the latest read — strip \`LINE|\` prefixes; prefer a short unique 3–12 line anchor; on \`NO_MATCH\` re-read then retry once with a tighter anchor, else \`writeFile\`), \`sandbox.addFile\` for new files, \`sandbox.writeFile\` only for full rewrites, \`sandbox.applyOperations\` for atomic multi-file changes. Match neighboring style (imports, naming, patterns). New deps go into package.json in the same change.
 3. If the plan no longer fits the current state, adapt minimally and note the deviation in the final summary.
 
 Verify (mandatory whenever the Sandbox skill is loaded — do not skip, do not defer):
@@ -465,7 +470,9 @@ export async function runPlanExecutorAgent(
 
   const resolvedSkills = resolveSkills(options.skillIds);
   const hasSandbox = resolvedSkills.activeIds.includes("sandbox");
+  const defaultCapabilitiesPrompt = buildDefaultCapabilitiesPrompt();
   const skillsPrompt = buildSkillsPromptSection(resolvedSkills);
+  const hostCapabilitiesPrompt = `${defaultCapabilitiesPrompt}\n\n${skillsPrompt}`;
   const model = createLanguageModel(settings);
   options.onProgress?.({ type: "compacting" });
   const preparedHistory = await prepareHistoryContext({
@@ -514,7 +521,7 @@ export async function runPlanExecutorAgent(
     },
     toolChoice: { type: "tool", toolName: "submitPlan" },
     instructions: PLANNER_INSTRUCTIONS,
-    prompt: `${skillsPrompt}\n\nUser request:\n${prompt}${historyBlock}${previewErrorBlock}\n\nProject context:\n${visibleProjectContext}`,
+    prompt: `${hostCapabilitiesPrompt}\n\nUser request:\n${prompt}${historyBlock}${previewErrorBlock}\n\nProject context:\n${visibleProjectContext}`,
   });
   reportUsage(planResult.usage);
 
@@ -534,7 +541,7 @@ export async function runPlanExecutorAgent(
     getErrors: () => options.previewErrors ?? [],
   };
   const agentCli = createAgentCliRuntime({
-    plugins: resolvedSkills.plugins,
+    plugins: mergeAgentPlugins(DEFAULT_AGENT_PLUGINS, resolvedSkills.plugins),
     context: { sandbox, previewConsole },
     signal: options.abortSignal,
   });
@@ -618,7 +625,7 @@ export async function runPlanExecutorAgent(
   // Re-read project after planning so executor sees any concurrent UI edits.
   const result = await executor.stream({
     abortSignal: options.abortSignal,
-    prompt: `${skillsPrompt}\n\nUser request:\n${prompt}${historyBlock}${previewErrorBlock}\n\n${planText}\n\nProject context:\n${visibleProjectContext}\n\nExecute the plan now.`,
+    prompt: `${hostCapabilitiesPrompt}\n\nUser request:\n${prompt}${historyBlock}${previewErrorBlock}\n\n${planText}\n\nProject context:\n${visibleProjectContext}\n\nExecute the plan now.`,
   });
 
   let reply = "";

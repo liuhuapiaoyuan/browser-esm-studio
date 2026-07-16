@@ -449,7 +449,13 @@ export class Sandbox {
 
     const { next, count } = replaceInContent(draft[normalized], oldString, newString, options);
     if (count === 0) {
-      throw new SandboxError("NO_MATCH", `No matches found in ${normalized}.`, normalized);
+      const preview = oldString.length > 96 ? `${oldString.slice(0, 96)}…` : oldString;
+      const previewSafe = preview.replace(/\n/g, "\\n");
+      throw new SandboxError(
+        "NO_MATCH",
+        `No matches found in ${normalized}. Re-read the file and copy a shorter exact anchor. oldString preview: ${JSON.stringify(previewSafe)}`,
+        normalized,
+      );
     }
 
     draft[normalized] = next;

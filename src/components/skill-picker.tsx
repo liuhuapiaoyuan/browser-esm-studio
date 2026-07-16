@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { SkillId, SkillSummary } from "../lib/ai/skills/registry";
 
@@ -11,13 +11,7 @@ type SkillPickerProps = {
   onChange: (ids: SkillId[]) => void;
 };
 
-const SKILL_ACCENT: Record<string, string> = {
-  sandbox: "#7cb342",
-  "dynamic-db": "#42a5f5",
-  "lite-image": "#ab47bc",
-  "interactive-quest": "#ffa726",
-  "quest-learning": "#26a69a",
-};
+const SKILL_INDEX = ["壹", "贰", "叁", "肆", "伍", "陆", "柒", "捌", "玖", "拾"];
 
 export function updateRequestedSkillIds(
   skills: readonly SkillSummary[],
@@ -40,13 +34,6 @@ export function isSkillDependencyLocked(
 
 export function snapshotSkillIds(skillIds: readonly SkillId[]): SkillId[] {
   return [...skillIds];
-}
-
-function skillInitial(title: string): string {
-  const trimmed = title.trim();
-  if (!trimmed) return "?";
-  const first = trimmed.codePointAt(0);
-  return first ? String.fromCodePoint(first).toUpperCase() : "?";
 }
 
 export function SkillPicker({
@@ -121,24 +108,24 @@ export function SkillPicker({
         </header>
 
         <div className="skill-store-grid" role="group" aria-label="可选 Agent 技能">
-          {skills.map((skill) => {
+          {skills.map((skill, index) => {
             const dependents = requiredBy[skill.id] ?? [];
             const locked = isSkillDependencyLocked(requiredBy, skill.id);
             const isActive = active.has(skill.id);
             const dependencyLabels = dependents.map((id) => byId.get(id)?.title ?? id);
             const requiresLabels = skill.requires.map((id) => byId.get(id)?.title ?? id);
-            const accent = SKILL_ACCENT[skill.id] ?? "#8fbc5a";
+            const indexLabel = SKILL_INDEX[index] ?? String(index + 1);
 
             return (
               <article
                 key={skill.id}
                 className={`skill-store-card ${isActive ? "is-active" : ""} ${locked ? "is-locked" : ""}`}
-                style={{ "--skill-accent": accent } as CSSProperties}
               >
-                <div className="skill-store-card-top">
-                  <div className="skill-store-card-icon" aria-hidden="true">
-                    {skillInitial(skill.title)}
-                  </div>
+                <div className="skill-store-card-cover">
+                  <img src={skill.icon} alt="" loading="lazy" decoding="async" />
+                  <span className="skill-store-card-index" aria-hidden="true">
+                    {indexLabel}
+                  </span>
                   <div className="skill-store-card-badges">
                     {skill.defaultEnabled ? <span className="is-builtin">内置</span> : null}
                     {locked ? <span className="is-auto">自动</span> : null}
@@ -146,25 +133,28 @@ export function SkillPicker({
                   </div>
                 </div>
 
-                <h3>{skill.title}</h3>
-                <p>{skill.description}</p>
+                <div className="skill-store-card-body">
+                  <h3>{skill.title}</h3>
+                  <p className="skill-store-card-motto">{skill.motto}</p>
+                  <p className="skill-store-card-desc">{skill.description}</p>
 
-                <div className="skill-store-card-meta">
-                  {locked ? <em>由 {dependencyLabels.join("、")} 自动加载</em> : null}
-                  {!locked && skill.requires.length ? (
-                    <em>同时加载 {requiresLabels.join("、")}</em>
-                  ) : null}
+                  <div className="skill-store-card-meta">
+                    {locked ? <em>由 {dependencyLabels.join("、")} 自动加载</em> : null}
+                    {!locked && skill.requires.length ? (
+                      <em>同时加载 {requiresLabels.join("、")}</em>
+                    ) : null}
+                  </div>
+
+                  <button
+                    type="button"
+                    className="skill-store-card-action"
+                    disabled={disabled || locked}
+                    aria-pressed={isActive}
+                    onClick={() => toggle(skill.id, !isActive)}
+                  >
+                    {locked ? "依赖锁定" : isActive ? "已启用 →" : "启用技能 →"}
+                  </button>
                 </div>
-
-                <button
-                  type="button"
-                  className="skill-store-card-action"
-                  disabled={disabled || locked}
-                  aria-pressed={isActive}
-                  onClick={() => toggle(skill.id, !isActive)}
-                >
-                  {locked ? "依赖锁定" : isActive ? "已启用" : "启用技能"}
-                </button>
               </article>
             );
           })}

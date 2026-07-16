@@ -14,6 +14,10 @@ interface ImportMetaEnv {
   readonly VITE_LITE_IMAGE_API_KEY?: string;
   readonly VITE_LITE_IMAGE_MODEL?: string;
   readonly VITE_LITE_IMAGE_PROXY_TARGET?: string;
+  readonly VITE_LITE_SPEECH_BASE_URL?: string;
+  readonly VITE_LITE_SPEECH_API_KEY?: string;
+  readonly VITE_LITE_SPEECH_MODEL?: string;
+  readonly VITE_LITE_SPEECH_SPEAKER?: string;
   readonly VITE_SILICONFLOW_API_KEY?: string;
 }
 

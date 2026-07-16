@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+    <html lang=&quot;zh-CN&quot;>
+    <head>
+        <meta charset=&quot;UTF-8&quot;>
+        <meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1.0&quot;>
+        <title>峥嵘岁月：新民主主义革命历程全景展示</title>
+        <!-- Tailwind CSS -->
+        <script src=&quot;https://metis-online.fbcontent.cn/metis-misc/zgLDUdmazTYc0B4K6Cor.js&quot;></script>
+        <!-- Anime.js -->
+        <script src=&quot;https://metis-online.fbcontent.cn/metis-misc/zZZY40t7WJC7UdQCPACm.js&quot;></script>
+        <script>
+            tailwind.config = {
+                theme: {
+                    extend: {
+                        colors: {
+                            primary: '#B91C1C', // 中国红 (Red-700)
+                            secondary: '#7F1D1D', // 深红背景 (Red-900)
+                            accent: '#F59E0B', // 亮金/橙 (Amber-500)
+                            paper: '#FFFBEB', // 浅米黄纸张色
+                            ink: '#111827', // 墨色
+                            wood: '#92400E', // 深木色
+                        },
+                        fontFamily: {
+                            serif: ['&quot;Noto Serif SC&quot;', 'SimSun', 'serif'],
+                            sans: ['&quot;Noto Sans SC&quot;', 'sans-serif'],
+                        }
+                    }
+                }
+            }
+        </script>
+        <link href=&quot;https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&amp;family=Noto+Sans+SC:wght@300;400;500;700&amp;display=swap&quot; rel=&quot;stylesheet&quot;>
+        <style>
+            body {
+                background-color: #7F1D1D;
+                background-image: url(&quot;data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23b91c1c' fill-opacity='0.2'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E&quot;);
+                font-family: 'Noto Serif SC', serif;
+                color: #111827;
+                -webkit-font-smoothing: antialiased;
+            }
+            
+            .paper-texture {
+                background-color: #FFFBEB;
+                background-image: url(&quot;data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.05'/%3E%3C/svg%3E&quot;);
+                box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+            }
+    
+            .card-hover {
+                -webkit-transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+                transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+            }
+            
+            .card-hover:hover {
+                -webkit-transform: translateY(-8px) scale(1.02);
+                transform: translateY(-8px) scale(1.02);
+                box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+            }
+    
+            .modal-backdrop {
+                backdrop-filter: blur(8px);
+                -webkit-backdrop-filter: blur(8px);
+            }
+    
+            .ink-border {
+                border: 2px solid #B91C1C;
+                position: relative;
+            }
+            .ink-border::after {
+                content: '';
+                position: absolute;
+                top: -4px; left: -4px; right: -4px; bottom: -4px;
+                border: 1px solid #F59E0B;
+                pointer-events: none;
+            }
+    
+            @media (max-width: 768px) {
+                .hero-title { font-size: 1.875rem; }
+            }
+        </style>
+    </head>
+    <body class=&quot;min-h-screen p-4 md:p-8 overflow-x-hidden&quot;>
+    
+        <!-- 顶部标题区 -->
+        <header class=&quot;max-w-6xl mx-auto mb-12 text-center relative z-10&quot;>
+            <div class=&quot;paper-texture inline-block px-8 md:px-12 py-6 rounded-lg border-4 border-double border-primary relative&quot;>
+                <h1 class=&quot;hero-title text-3xl md:text-5xl font-bold text-primary mb-2 tracking-widest&quot;>新民主主义革命历程</h1>
+                <div class=&quot;w-full h-1 bg-gradient-to-r from-transparent via-accent to-transparent my-2&quot;></div>
+                <p class=&quot;text-wood font-bold text-base md:text-lg&quot;>从五四觉醒到新中国诞生的伟大跨越</p>
+                
+                <div class=&quot;mt-6 flex justify-center items-center gap-4&quot;>
+                    <button onclick=&quot;playAudio('audio-overview')&quot; class=&quot;flex items-center gap-2 bg-primary text-paper px-6 py-2 rounded-full hover:bg-accent transition-colors duration-300 shadow-lg&quot;>
+                        <svg class=&quot;w-5 h-5&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; viewBox=&quot;0 0 24 24&quot;><path stroke-linecap=&quot;round&quot; stroke-linejoin=&quot;round&quot; stroke-width=&quot;2&quot; d=&quot;M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z&quot;></path><path stroke-linecap=&quot;round&quot; stroke-linejoin=&quot;round&quot; stroke-width=&quot;2&quot; d=&quot;M21 12a9 9 0 11-18 0 9 9 0 0118 0z&quot;></path></svg>
+                        <span>收听全篇导读</span>
+                    </button>
+                    <audio id=&quot;audio-overview&quot; src=&quot;https://musk-online.fbcontent.cn/pub-musk-ai-studio/workflow/file/audio/BtXt5CZyCnyEuMZkfKGxFR.mp3&quot;></audio>
+                </div>
+            </div>
+        </header>
+    
+        <!-- 主内容区 -->
+        <main class=&quot;max-w-7xl mx-auto relative z-10&quot;>
+            <div class=&quot;hidden md:block absolute top-1/2 left-0 w-full h-2 bg-accent opacity-20 -translate-y-1/2 z-0&quot;></div>
+    
+            <div class=&quot;grid grid-cols-1 md:grid-cols-4 gap-8 relative z-10&quot;>
+                
+                <!-- 卡片1 -->
+                <article class=&quot;card-hover group cursor-pointer&quot; onclick=&quot;openModal('xingqi')&quot;>
+                    <div class=&quot;paper-texture h-full rounded-xl overflow-hidden ink-border flex flex-col&quot;>
+                        <div class=&quot;relative h-48 overflow-hidden&quot;>
+                            <img src=&quot;https://musk-online.fbcontent.cn/pub-musk-ai-studio/workflow/file/picture/A3RJmBxq9qo2mqgENZyuNM.jpg&quot; alt=&quot;五四运动&quot; class=&quot;w-full h-full object-cover transition-transform duration-700 group-hover:scale-110&quot;>
+                            <div class=&quot;absolute top-2 right-2 bg-primary text-paper text-xs px-2 py-1 rounded&quot;>1919 - 1921</div>
+                        </div>
+                        <div class=&quot;p-6 flex-grow flex flex-col items-center text-center&quot;>
+                            <div class=&quot;w-12 h-12 bg-primary rounded-full flex items-center justify-center text-paper font-bold text-xl mb-4 -mt-12 border-4 border-[#FFFBEB] shadow-lg z-10&quot;>壹</div>
+                            <h2 class=&quot;text-xl font-bold text-primary mb-2&quot;>新民主主义革命兴起</h2>
+                            <h3 class=&quot;text-lg font-bold text-accent mb-4&quot;>五四运动与中共诞生</h3>
+                            <div class=&quot;space-y-2 text-sm text-ink/80 mb-4&quot;>
+                                <p><span class=&quot;font-bold&quot;>转折：</span>五四运动是新民主主义革命开端</p>
+                                <p><span class=&quot;font-bold&quot;>诞生：</span>1921年中国共产党成立</p>
+                            </div>
+                            <div class=&quot;mt-auto pt-4 border-t border-wood/30 w-full&quot;>
+                                <span class=&quot;text-primary text-sm font-bold group-hover:text-accent transition-colors&quot;>点击查看史实详情 →</span>
+                            </div>
+                        </div>
+                    </div>
+                </article>
+    
+                <!-- 卡片2 -->
+                <article class=&quot;card-hover group cursor-pointer&quot; onclick=&quot;openModal('tudi')&quot;>
+                    <div class=&quot;paper-texture h-full rounded-xl overflow-hidden ink-border flex flex-col&quot;>
+                        <div class=&quot;relative h-48 overflow-hidden&quot;>
+                            <img src=&quot;https://musk-online.fbcontent.cn/pub-musk-ai-studio/workflow/file/picture/hXHUorjvuFrpbFcenEML5A.jpg&quot; alt=&quot;井冈山会师&quot; class=&quot;w-full h-full object-cover transition-transform duration-700 group-hover:scale-110&quot;>
+                            <div class=&quot;absolute top-2 right-2 bg-primary text-paper text-xs px-2 py-1 rounded&quot;>1924 - 1936</div>
+                        </div>
+                        <div class=&quot;p-6 flex-grow flex flex-col items-center text-center&quot;>
+                            <div class=&quot;w-12 h-12 bg-primary rounded-full flex items-center justify-center text-paper font-bold text-xl mb-4 -mt-12 border-4 border-[#FFFBEB] shadow-lg z-10&quot;>贰</div>
+                            <h2 class=&quot;text-xl font-bold text-primary mb-2&quot;>国共合作与工农武装</h2>
+                            <h3 class=&quot;text-lg font-bold text-accent mb-4&quot;>井冈山道路与长征</h3>
+                            <div class=&quot;space-y-2 text-sm text-ink/80 mb-4&quot;>
+                                <p><span class=&quot;font-bold&quot;>道路：</span>农村包围城市，武装夺取政权</p>
+                                <p><span class=&quot;font-bold&quot;>转机：</span>遵义会议挽救了党和红军</p>
+                            </div>
+                            <div class=&quot;mt-auto pt-4 border-t border-wood/30 w-full&quot;>
+                                <span class=&quot;text-primary text-sm font-bold group-hover:text-accent transition-colors&quot;>点击查看史实详情 →</span>
+                            </div>
+                        </div>
+                    </div>
+                </article>
+    
+                <!-- 卡片3 -->
+                <article class=&quot;card-hover group cursor-pointer&quot; onclick=&quot;openModal('kangri')&quot;>
+                    <div class=&quot;paper-texture h-full rounded-xl overflow-hidden ink-border flex flex-col&quot;>
+                        <div class=&quot;relative h-48 overflow-hidden&quot;>
+                            <img src=&quot;https://musk-online.fbcontent.cn/pub-musk-ai-studio/workflow/file/picture/VrReS8QVat8EjYPrG3C4k3.jpg&quot; alt=&quot;抗日战争&quot; class=&quot;w-full h-full object-cover transition-transform duration-700 group-hover:scale-110&quot;>
+                            <div class=&quot;absolute top-2 right-2 bg-primary text-paper text-xs px-2 py-1 rounded&quot;>1931 - 1945</div>
+                        </div>
+                        <div class=&quot;p-6 flex-grow flex flex-col items-center text-center&quot;>
+                            <div class=&quot;w-12 h-12 bg-primary rounded-full flex items-center justify-center text-paper font-bold text-xl mb-4 -mt-12 border-4 border-[#FFFBEB] shadow-lg z-10&quot;>叁</div>
+                            <h2 class=&quot;text-xl font-bold text-primary mb-2&quot;>中华民族抗日战争</h2>
+                            <h3 class=&quot;text-lg font-bold text-accent mb-4&quot;>全民族抗战的胜利</h3>
+                            <div class=&quot;space-y-2 text-sm text-ink/80 mb-4&quot;>
+                                <p><span class=&quot;font-bold&quot;>统一战线：</span>国共第二次合作</p>
+                                <p><span class=&quot;font-bold&quot;>胜利：</span>近代以来首次完全胜利</p>
+                            </div>
+                            <div class=&quot;mt-auto pt-4 border-t border-wood/30 w-full&quot;>
+                                <span class=&quot;text-primary text-sm font-bold group-hover:text-accent transition-colors&quot;>点击查看史实详情 →</span>
+                            </div>
+                        </div>
+                    </div>
+                </article>
+    
+                <!-- 卡片4 -->
+                <article class=&quot;card-hover group cursor-pointer&quot; onclick=&quot;openModal('jiefang')&quot;>
+                    <div class=&quot;paper-texture h-full rounded-xl overflow-hidden ink-border flex flex-col&quot;>
+                        <div class=&quot;relative h-48 overflow-hidden&quot;>
+                            <img src=&quot;https://musk-online.fbcontent.cn/pub-musk-ai-studio/workflow/file/picture/q8VAWQVCq4vwNnzxjk3egb.jpg&quot; alt=&quot;解放战争&quot; class=&quot;w-full h-full object-cover transition-transform duration-700 group-hover:scale-110&quot;>
+                            <div class=&quot;absolute top-2 right-2 bg-primary text-paper text-xs px-2 py-1 rounded&quot;>1946 - 1949</div>
+                        </div>
+                        <div class=&quot;p-6 flex-grow flex flex-col items-center text-center&quot;>
+                            <div class=&quot;w-12 h-12 bg-primary rounded-full flex items-center justify-center text-paper font-bold text-xl mb-4 -mt-12 border-4 border-[#FFFBEB] shadow-lg z-10&quot;>肆</div>
+                            <h2 class=&quot;text-xl font-bold text-primary mb-2&quot;>人民解放战争</h2>
+                            <h3 class=&quot;text-lg font-bold text-accent mb-4&quot;>新中国的诞生</h3>
+                            <div class=&quot;space-y-2 text-sm text-ink/80 mb-4&quot;>
+                                <p><span class=&quot;font-bold&quot;>决战：</span>三大战役基本消灭国民党主力</p>
+                                <p><span class=&quot;font-bold&quot;>成立：</span>中华人民共和国成立</p>
+                            </div>
+                            <div class=&quot;mt-auto pt-4 border-t border-wood/30 w-full&quot;>
+                                <span class=&quot;text-primary text-sm font-bold group-hover:text-accent transition-colors&quot;>点击查看史实详情 →</span>
+                            </div>
+                        </div>
+                    </div>
+                </article>
+            </div>
+    
+            <!-- 测试题区域 -->
+            <section class=&quot;mt-16 max-w-4xl mx-auto&quot;>
+                <div class=&quot;paper-texture rounded-xl p-8 ink-border&quot;>
+                    <h2 class=&quot;text-2xl md:text-3xl font-bold text-primary mb-8 text-center border-b-2 border-wood/30 pb-4&quot;>历史知识挑战</h2>
+                    <div id=&quot;quiz-container&quot; class=&quot;space-y-6&quot;></div>
+                    <div class=&quot;mt-8 text-center&quot;>
+                        <button onclick=&quot;checkAnswers()&quot; class=&quot;bg-primary text-paper px-8 py-3 rounded-lg font-bold text-lg hover:bg-accent transition-colors shadow-lg&quot;>提交答案</button>
+                        <div id=&quot;result-display&quot; class=&quot;mt-4 text-xl font-bold hidden&quot;></div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    
+        <!-- 模态框 -->
+        <div id=&quot;modal-overlay&quot; class=&quot;fixed inset-0 z-50 hidden modal-backdrop bg-black/60 flex items-center justify-center p-4 opacity-0 transition-opacity duration-300&quot;>
+            <div class=&quot;paper-texture w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-xl shadow-2xl transform scale-95 transition-transform duration-300 relative ink-border&quot; id=&quot;modal-content&quot;>
+                <button onclick=&quot;closeModal()&quot; class=&quot;absolute top-4 right-4 text-primary hover:text-accent z-20&quot;>
+                    <svg class=&quot;w-8 h-8&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; viewBox=&quot;0 0 24 24&quot;><path stroke-linecap=&quot;round&quot; stroke-linejoin=&quot;round&quot; stroke-width=&quot;2&quot; d=&quot;M6 18L18 6M6 6l12 12&quot;></path></svg>
+                </button>
+                
+                <div class=&quot;grid grid-cols-1 md:grid-cols-2&quot;>
+                    <div class=&quot;h-64 md:h-auto relative&quot;>
+                        <img id=&quot;modal-img&quot; src=&quot;&quot; alt=&quot;&quot; class=&quot;w-full h-full object-cover&quot;>
+                        <div class=&quot;absolute bottom-0 left-0 w-full bg-gradient-to-t from-black/80 to-transparent p-4&quot;>
+                            <h2 id=&quot;modal-title&quot; class=&quot;text-2xl md:text-3xl font-bold text-white&quot;></h2>
+                        </div>
+                    </div>
+                    <div class=&quot;p-6 md:p-8&quot;>
+                        <div class=&quot;space-y-4 text-ink&quot;>
+                            <div class=&quot;flex justify-between items-center mb-4&quot;>
+                                <button id=&quot;modal-audio-btn&quot; class=&quot;flex items-center gap-2 bg-primary text-paper px-4 py-2 rounded-lg hover:bg-accent transition-all shadow-md text-sm&quot;>
+                                    <svg class=&quot;w-4 h-4&quot; fill=&quot;currentColor&quot; viewBox=&quot;0 0 20 20&quot;><path d=&quot;M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM14.657 2.929a1 1 0 011.414 0A9.972 9.972 0 0119 10a9.972 9.972 0 01-2.929 7.071 1 1 0 01-1.414-1.414A7.971 7.971 0 0017 10c0-2.21-.894-4.208-2.343-5.657a1 1 0 010-1.414zm-2.829 2.828a1 1 0 011.415 0A5.983 5.983 0 0115 10a5.983 5.983 0 01-1.757 4.243 1 1 0 01-1.415-1.415A3.984 3.984 0 0013 10a3.984 3.984 0 00-1.172-2.828 1 1 0 010-1.415z&quot;></path></svg>
+                                    <span>播放语音讲解</span>
+                                </button>
+                                <audio id=&quot;modal-audio-player&quot;></audio>
+                            </div>
+                            <div class=&quot;flex border-b border-wood/30 pb-2&quot;>
+                                <span class=&quot;font-bold w-24 text-primary&quot;>关键节点：</span>
+                                <span id=&quot;modal-nodes&quot;></span>
+                            </div>
+                            <div class=&quot;flex border-b border-wood/30 pb-2&quot;>
+                                <span class=&quot;font-bold w-24 text-primary&quot;>代表人物：</span>
+                                <span id=&quot;modal-people&quot;></span>
+                            </div>
+                            <div>
+                                <span class=&quot;font-bold block text-primary mb-2&quot;>史实详述：</span>
+                                <p id=&quot;modal-detail&quot; class=&quot;leading-relaxed text-justify text-sm md:text-base&quot;></p>
+                            </div>
+                            <div class=&quot;bg-primary/5 p-4 rounded-lg border-l-4 border-primary&quot;>
+                                <span class=&quot;font-bold block text-primary mb-1&quot;>历史意义：</span>
+                                <p id=&quot;modal-significance&quot; class=&quot;text-sm italic&quot;></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    
+        <script>
+            const historyData = {
+                xingqi: {
+                    title: &quot;新民主主义革命兴起&quot;,
+                    img: &quot;https://musk-online.fbcontent.cn/pub-musk-ai-studio/workflow/file/picture/A3RJmBxq9qo2mqgENZyuNM.jpg&quot;,
+                    nodes: &quot;五四运动(1919)、中共一大(1921)&quot;,
+                    people: &quot;陈独秀、李大钊、毛泽东、董必武&quot;,
+                    detail: &quot;1919年巴黎和会外交失败引发五四运动，工人阶级登上历史舞台，标志着新民主主义革命的开端。1921年7月，中共一大在上海召开（后转至嘉兴南湖），宣告中国共产党诞生，中国革命面貌焕然一新。&quot;,
+                    significance: &quot;五四运动促进了马克思主义的传播；中共成立使革命有了坚强的领导核心。&quot;,
+                    audio: &quot;https://musk-online.fbcontent.cn/pub-musk-ai-studio/workflow/file/audio/HCtC7r5T7k4cmFNg3HTGMc.mp3&quot;
+                },
+                tudi: {
+                    title: &quot;国共合作与工农武装&quot;,
+                    img: &quot;https://musk-online.fbcontent.cn/pub-musk-ai-studio/workflow/file/picture/hXHUorjvuFrpbFcenEML5A.jpg&quot;,
+                    nodes: &quot;北伐战争、井冈山会师、遵义会议、长征胜利&quot;,
+                    people: &quot;毛泽东、朱德、周恩来&quot;,
+                    detail: &quot;1924年国共第一次合作开展北伐。1927年革命失败后，毛泽东领导秋收起义并建立井冈山革命根据地，开创了“工农武装割据”道路。1934-1936年红军进行战略转移（长征），1935年遵义会议确立了毛泽东在党中央的领导地位，挽救了革命。&quot;,
+                    significance: &quot;开辟了农村包围城市、武装夺取政权的正确道路；长征保存了革命火种。&quot;,
+                    audio: &quot;https://musk-online.fbcontent.cn/pub-musk-ai-studio/workflow/file/audio/4tcfy2GZuPNQ5VtT5AsevJ.mp3&quot;
+                },
+                kangri: {
+                    title: &quot;中华民族抗日战争&quot;,
+                    img: &quot;https://musk-online.fbcontent.cn/pub-musk-ai-studio/workflow/file/picture/VrReS8QVat8EjYPrG3C4k3.jpg&quot;,
+                    nodes: &quot;九一八事变、西安事变、七七事变、百团大战&quot;,
+                    people: &quot;毛泽东、彭德怀、张学良、杨虎城&quot;,
+                    detail: &quot;1931年九一八事变开启局部抗战。1936年西安事变和平解决，抗日民族统一战线初步形成。1937年七七事变后全民族抗战爆发。中国共产党坚持敌后战场，开展游击战争，最终于1945年取得抗战完全胜利。&quot;,
+                    significance: &quot;近代以来中国反抗外来侵略取得的第一次完全胜利，洗雪了民族耻辱。&quot;,
+                    audio: &quot;https://musk-online.fbcontent.cn/pub-musk-ai-studio/workflow/file/audio/fZgwTWhWeb37aewgUxkM5J.mp3&quot;
+                },
+                jiefang: {
+                    title: &quot;人民解放战争&quot;,
+                    img: &quot;https://musk-online.fbcontent.cn/pub-musk-ai-studio/workflow/file/picture/q8VAWQVCq4vwNnzxjk3egb.jpg&quot;,
+                    nodes: &quot;重庆谈判、三大战役、渡江战役、开国大典&quot;,
+                    people: &quot;毛泽东、朱德、周恩来、刘少奇&quot;,
+                    detail: &quot;1946年国民党挑起内战。解放军经过战略防御转入战略进攻。1948-1949年辽沈、淮海、平津三大战役基本消灭国民党主力。1949年4月解放南京。10月1日，中华人民共和国成立，标志着新民主主义革命取得基本胜利。&quot;,
+                    significance: &quot;结束了半殖民地半封建社会的历史，中国人民从此站起来了。&quot;,
+                    audio: &quot;https://musk-online.fbcontent.cn/pub-musk-ai-studio/workflow/file/audio/e5Y6MRJPJsT5d23W2mDksC.mp3&quot;
+                }
+            };
+    
+            const questions = [
+                {
+                    id: 1,
+                    question: &quot;标志着中国新民主主义革命开端的历史事件是？&quot;,
+                    options: [&quot;A. 辛亥革命&quot;, &quot;B. 五四运动&quot;, &quot;C. 中共一大召开&quot;, &quot;D. 北伐战争&quot;],
+                    answer: &quot;B&quot;
+                },
+                {
+                    id: 2,
+                    question: &quot;中国共产党在长征途中召开的，具有生死攸关转折意义的会议是？&quot;,
+                    options: [&quot;A. 八七会议&quot;, &quot;B. 古田会议&quot;, &quot;C. 遵义会议&quot;, &quot;D. 中共七大&quot;],
+                    answer: &quot;C&quot;
+                },
+                {
+                    id: 3,
+                    question: &quot;下列关于抗日战争胜利的历史意义，表述不正确的是？&quot;,
+                    options: [&quot;A. 彻底结束了半殖民地半封建社会&quot;, &quot;B. 洗雪了近代以来的民族耻辱&quot;, &quot;C. 提高了中国的国际地位&quot;, &quot;D. 促进了中华民族的觉醒&quot;],
+                    answer: &quot;A&quot;
+                }
+            ];
+    
+            function initQuiz() {
+                const container = document.getElementById('quiz-container');
+                questions.forEach((q, index) => {
+                    const div = document.createElement('div');
+                    div.className = &quot;bg-white/50 p-4 rounded-lg border border-wood/20&quot;;
+                    div.innerHTML = `
+                        <p class=&quot;font-bold text-lg mb-3 text-primary&quot;>${index + 1}. ${q.question}</p>
+                        <div class=&quot;grid grid-cols-1 md:grid-cols-2 gap-2&quot;>
+                            ${q.options.map(opt => `
+                                <label class=&quot;flex items-center space-x-3 cursor-pointer hover:bg-white/60 p-2 rounded transition&quot;>
+                                    <input type=&quot;radio&quot; name=&quot;q${q.id}&quot; value=&quot;${opt.charAt(0)}&quot; class=&quot;form-radio text-primary h-5 w-5&quot;>
+                                    <span class=&quot;text-ink&quot;>${opt}</span>
+                                </label>
+                            `).join('')}
+                        </div>
+                    `;
+                    container.appendChild(div);
+                });
+            }
+    
+            function checkAnswers() {
+                let score = 0;
+                let allAnswered = true;
+                questions.forEach(q => {
+                    const selected = document.querySelector(`input[name=&quot;q${q.id}&quot;]:checked`);
+                    if (!selected) allAnswered = false;
+                    else if (selected.value === q.answer) score++;
+                });
+                const resultDiv = document.getElementById('result-display');
+                resultDiv.classList.remove('hidden');
+                if (!allAnswered) {
+                    resultDiv.innerHTML = `<span class=&quot;text-accent&quot;>请回答所有问题后再提交！</span>`;
+                } else {
+                    const percentage = (score / questions.length) * 100;
+                    let msg = percentage === 100 ? &quot;史实掌握非常扎实！🎉&quot; : (percentage >= 60 ? &quot;表现不错，继续努力！👍&quot; : &quot;建议重新阅读史实详情哦！📚&quot;);
+                    resultDiv.innerHTML = `<span class=&quot;text-primary&quot;>得分：${score}/${questions.length} - ${msg}</span>`;
+                }
+            }
+    
+            let currentAudio = null;
+            function playAudio(id) {
+                const audio = document.getElementById(id);
+                if (currentAudio &amp;&amp; currentAudio !== audio) {
+                    currentAudio.pause();
+                    currentAudio.currentTime = 0;
+                }
+                if (audio.paused) {
+                    audio.play();
+                    currentAudio = audio;
+                } else {
+                    audio.pause();
+                }
+            }
+    
+            function openModal(key) {
+                const item = historyData[key];
+                document.getElementById('modal-title').innerText = item.title;
+                document.getElementById('modal-img').src = item.img;
+                document.getElementById('modal-nodes').innerText = item.nodes;
+                document.getElementById('modal-people').innerText = item.people;
+                document.getElementById('modal-detail').innerText = item.detail;
+                document.getElementById('modal-significance').innerText = item.significance;
+                
+                const audioPlayer = document.getElementById('modal-audio-player');
+                audioPlayer.src = item.audio;
+                const audioBtn = document.getElementById('modal-audio-btn');
+                audioBtn.onclick = () => {
+                    if (audioPlayer.paused) {
+                        audioPlayer.play();
+                        audioBtn.innerHTML = `<svg class=&quot;w-4 h-4&quot; fill=&quot;currentColor&quot; viewBox=&quot;0 0 20 20&quot;><path fill-rule=&quot;evenodd&quot; d=&quot;M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z&quot; clip-rule=&quot;evenodd&quot;></path></svg><span>暂停语音</span>`;
+                    } else {
+                        audioPlayer.pause();
+                        audioBtn.innerHTML = `<svg class=&quot;w-4 h-4&quot; fill=&quot;currentColor&quot; viewBox=&quot;0 0 20 20&quot;><path d=&quot;M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM14.657 2.929a1 1 0 011.414 0A9.972 9.972 0 0119 10a9.972 9.972 0 01-2.929 7.071 1 1 0 01-1.414-1.414A7.971 7.971 0 0017 10c0-2.21-.894-4.208-2.343-5.657a1 1 0 010-1.414zm-2.829 2.828a1 1 0 011.415 0A5.983 5.983 0 0115 10a5.983 5.983 0 01-1.757 4.243 1 1 0 01-1.415-1.415A3.984 3.984 0 0013 10a3.984 3.984 0 00-1.172-2.828 1 1 0 010-1.415z&quot;></path></svg><span>播放语音讲解</span>`;
+                    }
+                };
+    
+                const overlay = document.getElementById('modal-overlay');
+                const content = document.getElementById('modal-content');
+                overlay.classList.remove('hidden');
+                anime({ targets: overlay, opacity: [0, 1], duration: 300, easing: 'easeOutQuad' });
+                anime({ targets: content, scale: [0.9, 1], duration: 300, easing: 'easeOutBack' });
+            }
+    
+            function closeModal() {
+                const overlay = document.getElementById('modal-overlay');
+                const audioPlayer = document.getElementById('modal-audio-player');
+                audioPlayer.pause();
+                audioPlayer.currentTime = 0;
+                anime({
+                    targets: overlay,
+                    opacity: 0,
+                    duration: 200,
+                    easing: 'easeInQuad',
+                    complete: () => overlay.classList.add('hidden')
+                });
+            }
+    
+            window.onload = function() {
+                initQuiz();
+                anime({
+                    targets: 'article',
+                    translateY: [50, 0],
+                    opacity: [0, 1],
+                    delay: anime.stagger(150),
+                    duration: 800,
+                    easing: 'easeOutExpo'
+                });
+            };
+        </script>
+    </body>
+    </html>

@@ -5,7 +5,7 @@
 - 用户上传/导入了参考 HTML（闯关课、地图选关、单元作文互动、教育互动页），希望**仿作同类交互**
 - 需要：解构参考骨架 → 重写教学内容 → `image.generate` 统一风格配图 → 在 sandbox 落地 React 交互页
 
-本技能是 **playbook**（无独立 CLI 命令）。依赖已加载的 **Sandbox** 与 **Lite Image**：所有读写走 `sandbox.*`，所有配图走 `image.generate`。
+本技能是 **playbook**（无独立 CLI 命令）。依赖已加载的 **Sandbox**：所有读写走 `sandbox.*`；配图用内置 `image.generate`。
 
 **Never** 把参考 HTML 全文塞进上下文、复制 `_bm_*` / 假 analytics meta、产出巨型单文件 HTML / `srcdoc` 壳、下载图片或写入 base64。
 

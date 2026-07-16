@@ -1,5 +1,6 @@
 import type { FileMap } from "./types";
-import { LOGO_DATA_URL } from "./defaultProjectLogoData";
+
+const LOGO_CDN_URL = "https://cdn.qxai666.com/assets/silu-logo.png";
 
 export const DEFAULT_FILES: FileMap = {
   "index.html": `<!doctype html>
@@ -961,7 +962,7 @@ export function TableCaption({ className, ...props }: React.ComponentProps<"capt
   return <caption className={cn("mt-4 text-sm text-muted-foreground", className)} {...props} />;
 }
 `,
-  "src/assets/logo.ts": `export const logoSrc = ${JSON.stringify(LOGO_DATA_URL)};
+  "src/assets/logo.ts": `export const logoSrc = ${JSON.stringify(LOGO_CDN_URL)};
 `,
   "src/content.ts": `export const content = {
   badge: "AI 全栈创作",
