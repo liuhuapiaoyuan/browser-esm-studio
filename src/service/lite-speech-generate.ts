@@ -3,14 +3,14 @@
  * API: POST {baseUrl}/audio/speech
  * 响应为音频二进制，调用方自行播放 / 下载 / 写入。
  *
- * voice 组合规则：`${model}:${speaker}`，如 `fnlp/MOSS-TTSD-v0.5:diana`
+ * voice 组合规则：`${model}:${speaker}`，如 `FunAudioLLM/CosyVoice2-0.5B:diana`
  */
 
 /** 直连 SiliconFlow（Node / CLI）。浏览器请走 Vite 反代路径。 */
 export const LITE_SPEECH_DEFAULT_BASE_URL = 'https://api.siliconflow.cn/v1'
 /** 浏览器默认：与文生图共用 Vite `/lite-image-proxy` → SiliconFlow */
 export const LITE_SPEECH_BROWSER_BASE_URL = '/lite-image-proxy/v1'
-export const LITE_SPEECH_DEFAULT_MODEL = 'fnlp/MOSS-TTSD-v0.5'
+export const LITE_SPEECH_DEFAULT_MODEL = 'FunAudioLLM/CosyVoice2-0.5B'
 export const LITE_SPEECH_DEFAULT_SPEAKER = 'alex'
 export const LITE_SPEECH_DEFAULT_RESPONSE_FORMAT = 'mp3'
 export const LITE_SPEECH_DEFAULT_SPEED = 1
@@ -47,7 +47,7 @@ export type LiteSpeechReference = {
 export type LiteSpeechGenerateInput = {
   /** 待合成文本；自然语言指令可加 `<|endofprompt|>` 与 `[laughter]` 等标记 */
   input: string
-  /** 模型名，默认 fnlp/MOSS-TTSD-v0.5 */
+  /** 模型名，默认 FunAudioLLM/CosyVoice2-0.5B */
   model?: LiteSpeechModel
   /**
    * 说话人短名（alex / diana 等）。
@@ -56,7 +56,7 @@ export type LiteSpeechGenerateInput = {
    */
   speaker?: LiteSpeechSpeaker
   /**
-   * 完整 voice，如 `fnlp/MOSS-TTSD-v0.5:alex`。
+   * 完整 voice，如 `FunAudioLLM/CosyVoice2-0.5B:alex`。
    * 与 references 互斥。
    */
   voice?: string

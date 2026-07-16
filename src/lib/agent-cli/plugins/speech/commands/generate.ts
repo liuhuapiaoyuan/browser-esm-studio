@@ -61,7 +61,7 @@ export const speechGenerate = defineCommand({
     voice: z
       .string()
       .optional()
-      .describe("完整 voice，如 fnlp/MOSS-TTSD-v0.5:diana（优先于 speaker）"),
+      .describe("完整 voice，如 FunAudioLLM/CosyVoice2-0.5B:diana（优先于 speaker）"),
     responseFormat: z
       .enum(["mp3", "opus", "wav", "pcm"])
       .optional()

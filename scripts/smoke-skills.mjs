@@ -293,8 +293,8 @@ const speechMapped = mapGeneratedSpeech(
     blob: new Blob([tinyMp3], { type: "audio/mpeg" }),
     mimeType: "audio/mpeg",
     responseFormat: "mp3",
-    model: "fnlp/MOSS-TTSD-v0.5",
-    voice: "fnlp/MOSS-TTSD-v0.5:alex",
+    model: "FunAudioLLM/CosyVoice2-0.5B",
+    voice: "FunAudioLLM/CosyVoice2-0.5B:alex",
   },
   { input: "你好", path: "src/assets/generated/audio/smoke-hi.ts" },
 );
