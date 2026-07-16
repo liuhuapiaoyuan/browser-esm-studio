@@ -203,11 +203,13 @@ cover → dialogue → (optional choices) → climax → ending → replay?
 
 必须按序执行。中间真相源固定为：
 
-`src/content/lesson-game-blueprint.json`
+`src/content/lesson-game-blueprint.ts`
 
 ### 1. Blueprint（从模板生成，非解构）
 
 `sandbox.addFile` / `sandbox.writeFile` 写入完整蓝图骨架：
+
+**文件格式（硬性）**：`.ts` 模块，`export default { ... } as const;`；Implement 时 `import blueprint from '@/content/lesson-game-blueprint.ts'`。**禁止** `.json` 蓝图或 `import *.json`。
 
 - `source`: `{ "path": null, "title": "…", "genre": "lesson-drama" }` — 无参考时 `path` 为 `null`
 - `reuse`: 固定 `coreLoop`、`layout: "L3-lesson-drama"`；`palette` **按课文自主设计**（非军旅类禁止默认套用《军神》绿）
@@ -330,7 +332,7 @@ cover → dialogue → (optional choices) → climax → ending → replay?
 ### 4. Implement（模块边界写死）
 
 ```
-src/content/lesson-game-blueprint.json
+src/content/lesson-game-blueprint.ts
 src/content/lesson-game-data.ts
 src/lib/lesson-game/state.ts
 src/lib/lesson-game/audio.ts
@@ -341,7 +343,7 @@ src/components/lesson-game/Ending.tsx
 src/App.tsx
 ```
 
-- 可将蓝图 codegen 为 `lesson-game-data.ts` 供强类型导入
+- 可将蓝图直接 import，或按需 codegen 为 `lesson-game-data.ts` 供派生数据
 - 状态机 = 蓝图 `coreLoop`；场景切换用 React state（`scene: 'cover' | 'dialogue' | 'climax' | 'ending'`）
 - **打字机**：用 `requestAnimationFrame` / 简单 interval，或 CSS；**不要**强绑 anime.js CDN
 - **shake / 逐字浮现**：纯 CSS `@keyframes` 或少量 JS
@@ -494,7 +496,7 @@ src/App.tsx
 
 ## Planner 建议步序
 
-1. 从用户意图生成 `lesson-game-blueprint.json` 骨架（`source.path=null`，固定 L3-lesson-drama；**自主设计 palette**；写入 `audio` 块）
+1. 从用户意图生成 `lesson-game-blueprint.ts` 骨架（`source.path=null`，固定 L3-lesson-drama；**自主设计 palette**；写入 `audio` 块）
 2. 填满 `characters` / `dialogues` / `climax` / `ending`；标记关键对白 `speech: true`；展开完整 `assets[]`
 3. 写 `styleLock` → **批量 `image.generate`** → `sfx.map` → 按需批量 `speech.generate`（对白 + 结局）
 4. 实现 `audio.ts` + Cover / Dialogue / Climax / Ending + state，接到 `App.tsx`

@@ -168,6 +168,11 @@ Core loop: understand → change → verify. Never report success without verifi
 - Link + Button: \`<Button asChild><Link to="/path">Label</Link></Button>\` — never wrap \`<Button>\` inside \`<Link>\`.
 - Three.js / R3F: \`@react-three/fiber@^9\` + \`@react-three/drei@^10\` (+ \`three\`). NEVER fiber@8 / drei@9 — they target React 18 and crash via esm.sh.
 
+## Config & content data (mandatory)
+- NEVER put app/content configuration under \`src/**\` as \`.json\` — Preview cannot reliably \`import\` JSON modules in the sandbox. Always use \`.ts\` config modules instead.
+- Pattern: \`export default { ... } as const;\` or \`export const fooConfig = { ... } as const;\`, then \`import fooConfig from '@/content/foo.ts'\` (keep \`.ts\` extension like neighboring imports).
+- Exceptions (stack-managed only): \`package.json\`, \`tsconfig.json\`, \`components.json\`. CLI-managed asset manifests (\`manifest.json\` under \`src/assets/**\`) are tool output — do not hand-author content blueprints as JSON.
+
 ## Code quality
 - Minimal diff: change only what the request needs — no drive-by refactors, renames, or style rewrites of untouched code.
 - High cohesion / low coupling: pages orchestrate, components render, \`src/lib/*\` holds pure logic, data stays behind existing facades (e.g. getDb()). Do not leak DOM/Tailwind into lib or DB details into presentational components.

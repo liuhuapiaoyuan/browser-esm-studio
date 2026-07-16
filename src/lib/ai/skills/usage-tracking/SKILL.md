@@ -10,7 +10,7 @@
 
 **Never** 在口令未确认前改文件 / 建 schema / 写追踪代码。  
 **Never** 用手写 fetch / curl 写 Dynamic DB；业务一律 `getDb()`（见 `dynamic-db` skill）。  
-**Never** 把口令写进聊天回复给「学生可见文案」；口令只进配置源 `src/content/usage-tracking.json`。
+**Never** 把口令写进聊天回复给「学生可见文案」；口令只进配置源 `src/content/usage-tracking.ts`。
 
 若本 skill 未加载而用户明确要「追踪学生使用 / 老师看学情」，告知启用 `usage-tracking`，不要假装已注入。
 
@@ -87,17 +87,19 @@
 
 ## 配置真相源
 
-固定路径：`src/content/usage-tracking.json`
+固定路径：`src/content/usage-tracking.ts`
 
-```json
-{
-  "displayName": "单元课件",
-  "studentPasscode": "CLASS2026",
-  "teacherPasscode": "TEACH2026",
-  "trackEvents": ["enter", "heartbeat", "leave", "interact"],
-  "heartbeatSec": 60
-}
+```typescript
+export default {
+  displayName: "单元课件",
+  studentPasscode: "CLASS2026",
+  teacherPasscode: "TEACH2026",
+  trackEvents: ["enter", "heartbeat", "leave", "interact"],
+  heartbeatSec: 60,
+} as const;
 ```
+
+- **禁止** `.json` 配置；业务侧 `import config from '@/content/usage-tracking.ts'`
 
 - 口令以老师确认为准，**原样写入**该文件（课堂共享口令场景；勿在 UI 明文回显）
 - 改口令 = 改此文件 + 保持校验逻辑读配置，不要散落魔法字符串
@@ -152,7 +154,7 @@
 
 | 路径 | 职责 |
 |------|------|
-| `src/content/usage-tracking.json` | 口令与开关 |
+| `src/content/usage-tracking.ts` | 口令与开关 |
 | `src/lib/usage-tracking.ts` | 校验口令、session、打点、heartbeat |
 | `src/components/StudentGate.tsx` | 学生入场门 |
 | `src/components/TeacherPortal.tsx` | 老师口令 + 学情面板 |
@@ -202,7 +204,7 @@ listEventsForSession(sessionId: string): Promise<...>
 口令门禁通过后，按序执行：
 
 1. **读现状**：`sandbox.listFiles` / `sandbox.readFile` 根组件，确认挂载点
-2. **写配置**：`src/content/usage-tracking.json`（含已确认口令）
+2. **写配置**：`src/content/usage-tracking.ts`（含已确认口令）
 3. **Schema**：`ddb.getSchema`（若有）→ 合并 → `ddb.setupSchema` → `ddb.codegen`
 4. **落地模块**：`usage-tracking.ts` + `StudentGate` + `TeacherPortal`
 5. **接线**：改 `App.tsx`（或等价根组件）包入场门与老师入口；关键路径打 `interact`
@@ -216,7 +218,7 @@ listEventsForSession(sessionId: string): Promise<...>
 | 情况 | 做法 |
 |------|------|
 | 同时做闯关/全景等新课件 | 先完成主课件骨架，再注入本 skill；或同一轮在根组件统一包 Gate |
-| 只需改口令 | 只改 `usage-tracking.json`，不要重建 schema |
+| 只需改口令 | 只改 `usage-tracking.ts`，不要重建 schema |
 | 只要追踪、不要老师面板 | **不允许**省略老师入口；本 skill 规定双入口都要有 |
 
 ---

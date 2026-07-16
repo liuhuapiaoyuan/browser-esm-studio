@@ -10,6 +10,12 @@
 
 路径一律相对路径（如 `src/App.tsx`）。窗口读取带 `LINE|` 前缀；用于 `oldString` / `newString` 时必须去掉（命令层也会尽量自动剥离，但不要依赖）。
 
+### 配置与内容数据（硬性）
+
+- **禁止**在 `src/**` 下用 `.json` 存应用/课件配置（蓝图、口令、关卡数据等）——Preview 沙箱内 `import *.json` 不可靠。
+- **一律**用 `.ts` 模块：`export default { ... } as const;`，业务侧 `import config from '@/content/foo.ts'`（保留 `.ts` 扩展名，与邻文件一致）。
+- 例外：栈文件 `package.json` / `tsconfig.json` / `components.json`；CLI 生成的 `src/assets/**/manifest.json` 仅作工具产物，不要手写 JSON 蓝图。
+
 ---
 
 ## 命令一览（直接 `cli_execute`，无需每次 describe）

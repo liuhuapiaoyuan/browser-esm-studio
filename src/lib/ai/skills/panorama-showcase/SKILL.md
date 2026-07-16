@@ -5,10 +5,8 @@
 - 用户要**从零制作**「阶段卡片 + 详情弹窗 + 知识测验」式全景学习页，**无需上传参考 HTML / 图片 / 音频**
 - 典型需求：历史历程全景、单元知识概览、人物/事件展板、专题阶段梳理、思政/党史类课件
 - 需要：`image.generate` 统一风格阶段封面图 → 在 sandbox 落地 React 交互页
-
-本技能是 **playbook**（无独立 CLI 命令）。依赖已加载的 **Sandbox**；配图用内置 `image.generate`。
-
-**Never** 产出巨型单文件 HTML / `srcdoc` 壳、下载外链图片或写入 base64、复制 `_bm_*` / analytics 噪声、强绑外部 Tailwind/Anime CDN（用项目内 CSS + 轻量 transition）。
+- 需要: `speech.generate` 在每个卡片配合 `speaker` 生成音频，并写入蓝图 `speechAssetPath`，查看卡片自动播放音频
+- 需要: `sfx.map` 交互音效
 
 若用户**已上传参考 HTML** 且希望「按文件仿作」，优先建议启用 `interactive-quest`；本 skill 仍可独立运行，仅把参考当作可选补充，**不强制读取**。
 
@@ -126,11 +124,13 @@ H-red 示例（**仅**历史/思政类可作缺省）：
 
 必须按序执行。中间真相源固定为：
 
-`src/content/panorama-blueprint.json`
+`src/content/panorama-blueprint.ts`
 
 ### 1. Blueprint（从模板生成，非解构）
 
 `sandbox.addFile` / `sandbox.writeFile` 写入完整蓝图骨架：
+
+**文件格式（硬性）**：`.ts` 模块，`export default { ... } as const;`；Implement 时 `import blueprint from '@/content/panorama-blueprint.ts'`。**禁止** `.json` 蓝图或 `import *.json`。
 
 - `source`: `{ "path": null, "title": "…", "genre": "stage-panorama" }` — 无参考时 `path` 为 `null`
 - `reuse`: 固定 `coreLoop`、`layout: "L2-panorama"`；`palette` **按主题选定**（非党史/思政勿默认 H-red）
@@ -230,7 +230,7 @@ H-red 示例（**仅**历史/思政类可作缺省）：
 ### 4. Implement（模块边界写死）
 
 ```
-src/content/panorama-blueprint.json
+src/content/panorama-blueprint.ts
 src/content/panorama-data.ts
 src/components/panorama/Header.tsx
 src/components/panorama/StageGrid.tsx
@@ -240,7 +240,7 @@ src/components/panorama/Quiz.tsx
 src/App.tsx
 ```
 
-- 可将蓝图 codegen 为 `panorama-data.ts` 供强类型导入
+- 可将蓝图直接 import，或按需 codegen 为 `panorama-data.ts` 供派生数据
 - 弹窗开关用 React state（`selectedStageId: string | null`）
 - 动效：CSS transition / `@keyframes`（卡片入场 stagger、弹窗 scale/opacity）；**不要**强绑 anime.js CDN
 - 纸张纹理、墨色双线边框、背景图案用项目内 CSS（可参考：`paper` 底 + 低透明噪点 SVG）
@@ -334,7 +334,7 @@ src/App.tsx
 
 ## Planner 建议步序
 
-1. 从用户意图生成 `panorama-blueprint.json` 骨架（`source.path=null`，固定 L2-panorama；**按主题选 palette，勿默认红**）
+1. 从用户意图生成 `panorama-blueprint.ts` 骨架（`source.path=null`，固定 L2-panorama；**按主题选 palette，勿默认红**）
 2. 填满 `stages` / `questions`；为每阶段写 `coverAssetId` 并展开完整 `assets[]`
 3. 写与 palette 一致的 `styleLock` → **批量 `image.generate`** → 确认全部 mapped
 4. 实现 Header / StageGrid / DetailModal / Quiz 并接到 `App.tsx`

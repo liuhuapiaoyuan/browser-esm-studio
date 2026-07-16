@@ -158,7 +158,7 @@ outlineConfirm → cover → navigate(next|prev|dot) → pageLocalInteract? → 
 
 必须按序。中间真相源：
 
-`src/content/slides-blueprint.json`
+`src/content/slides-blueprint.ts`
 
 ### 0. Outline gate
 
@@ -167,6 +167,8 @@ outlineConfirm → cover → navigate(next|prev|dot) → pageLocalInteract? → 
 ### 1. Blueprint
 
 `sandbox.addFile` / `writeFile` 写入完整蓝图：
+
+**文件格式（硬性）**：`.ts` 模块，`export default { ... } as const;`；Implement 时 `import blueprint from '@/content/slides-blueprint.ts'`。**禁止** `.json` 蓝图或 `import *.json`。
 
 - `source`: `{ "path": null, "title": "…", "genre": "slide-courseware" }`
 - `reuse`: `coreLoop`、`layout: "L4-slides"`、按主题的 `palette`
@@ -200,7 +202,7 @@ outlineConfirm → cover → navigate(next|prev|dot) → pageLocalInteract? → 
 ### 4. Implement（模块边界写死）
 
 ```
-src/content/slides-blueprint.json
+src/content/slides-blueprint.ts
 src/content/slides-data.ts
 src/components/slides/SlideShell.tsx
 src/components/slides/PageCover.tsx
@@ -217,7 +219,7 @@ src/components/slides/SlidePage.tsx
 src/App.tsx
 ```
 
-- 可将蓝图 codegen 为 `slides-data.ts`
+- 可将蓝图直接 import，或按需 codegen 为 `slides-data.ts`
 - `App.tsx`：扁平路由；`SlideShell` 作 layout（`element={<SlideShell />}` + `<Outlet />`）或在壳内读 `useParams` 渲染均可，但**必须**真实 path 翻页
 - `SlideShell`：根据当前页索引算 prev/next；圆点 `Link`；`useEffect` 监听 ArrowLeft / ArrowRight
 - `SlidePage`：按 `kind` 分发到对应 `Page*`
@@ -327,7 +329,7 @@ src/App.tsx
 ## Planner 建议步序
 
 1. **对话**：输出大纲表，等待老师确认（此步不要写文件）
-2. 确认后写 `slides-blueprint.json`（`source.path=null`，`layout: L4-slides`）
+2. 确认后写 `slides-blueprint.ts`（`source.path=null`，`layout: L4-slides`）
 3. 填满各页文案与 `assets[]`；写 `styleLock` → **批量 `image.generate`** → 确认 mapped
 4. 实现 `SlideShell` + 各 `Page*` + `App.tsx` 路由
 5. `typecheck` + `getPreviewErrors`

@@ -39,11 +39,13 @@
 
 必须按序执行；Planner 建议 5 步（见文末）。中间真相源固定为：
 
-`src/content/quest-blueprint.json`
+`src/content/quest-blueprint.ts`
 
 ### 1. Deconstruct → 蓝图骨架
 
 抽样后 `sandbox.addFile` / `sandbox.writeFile` 写入蓝图。**仿结构、不仿脏代码**：保留 core-loop / layout / 关卡级交互型；文案与图按用户 `intent` 重写。
+
+**文件格式（硬性）**：`.ts` 模块，`export default { ... } as const;`；Implement 时 `import blueprint from '@/content/quest-blueprint.ts'`。**禁止** `.json` 蓝图或 `import *.json`。
 
 用户说「参考这个做作文闯关」→ 把数学题换成作文题型（审题 / 选材 / 开头结尾 / 病句等），地图关卡语义一并换。
 
@@ -68,7 +70,7 @@
 ### 4. Implement（模块边界写死）
 
 ```
-src/content/quest-blueprint.json
+src/content/quest-blueprint.ts
 src/lib/quest/state.ts
 src/components/quest/Cover.tsx
 src/components/quest/Map.tsx
@@ -77,7 +79,7 @@ src/components/quest/Reward.tsx
 src/App.tsx
 ```
 
-- 也可把蓝图 codegen 为 `src/content/quest-data.ts` 供强类型导入
+- 也可把蓝图直接 import，或按需 codegen 为 `src/content/quest-data.ts` 供派生数据
 - 状态机 = 蓝图 `coreLoop`；进度默认 `localStorage`（用户明确要求再用 ddb）
 - 动效：CSS / 少量动画即可；勿强绑参考 CDN 的 anime/MathJax，除非学科确实需要公式
 - 配图：`import url from "./assets/generated/....ts"` 或读 `manifest.json`
@@ -160,7 +162,7 @@ src/App.tsx
 
 ## Planner 建议步序
 
-1. 抽样分析参考 → 写 `quest-blueprint.json` 骨架（source / reuse / screens）
+1. 抽样分析参考 → 写 `quest-blueprint.ts` 骨架（source / reuse / screens）
 2. 按用户意图填满 `levels` / `interactions`
 3. 填 `assets` + `styleLock` → 批量 `image.generate`
 4. 实现 `state` + 四屏组件并接到 `App.tsx`

@@ -97,11 +97,13 @@ cover? → map → selectLevel → present → answer → judge → feedback →
 
 必须按序执行。中间真相源固定为：
 
-`src/content/quest-blueprint.json`
+`src/content/quest-blueprint.ts`
 
 ### 1. Blueprint（从模板生成，非解构）
 
 `sandbox.addFile` / `sandbox.writeFile` 写入完整蓝图骨架：
+
+**文件格式（硬性）**：`.ts` 模块，`export default { ... } as const;`；Implement 时 `import blueprint from '@/content/quest-blueprint.ts'`。**禁止** `.json` 蓝图或 `import *.json`。
 
 - `source`: `{ "path": null, "title": "…", "genre": "map-quiz" }` — 无参考时 `path` 为 `null`
 - `reuse`: 固定 `coreLoop`、`layout: "L1-map"`、`palette` B-15
@@ -205,7 +207,7 @@ cover? → map → selectLevel → present → answer → judge → feedback →
 ### 4. Implement（模块边界写死）
 
 ```
-src/content/quest-blueprint.json
+src/content/quest-blueprint.ts
 src/lib/quest/state.ts
 src/components/quest/Cover.tsx
 src/components/quest/Map.tsx
@@ -214,7 +216,7 @@ src/components/quest/Reward.tsx
 src/App.tsx
 ```
 
-- 可将蓝图 codegen 为 `src/content/quest-data.ts` 供强类型导入
+- 可将蓝图直接 import，或按需 codegen 为 `src/content/quest-data.ts` 供派生数据
 - 状态机 = 蓝图 `coreLoop`；进度 **默认** `localStorage`（用户明确要求再用 ddb）
 - 动效：CSS transition / `@keyframes`；关卡入场 scale、confetti 用纯 CSS
 - **Map.tsx 精美度要求**：
@@ -303,7 +305,7 @@ src/App.tsx
 
 ## Planner 建议步序
 
-1. 从用户意图生成 `quest-blueprint.json` 骨架（`source.path=null`，固定 L1-map / B-15）
+1. 从用户意图生成 `quest-blueprint.ts` 骨架（`source.path=null`，固定 L1-map / B-15）
 2. 填满 `levels` / `interactions`；为每关写 `iconAssetId` 并展开完整 `assets[]`（1 地图 + N 图标 + 封面）
 3. 写 `styleLock` → **批量 `image.generate`（先地图，再逐关 icon）** → 确认全部 mapped
 4. 实现 `state` + 四屏组件（Map 必须挂载 map-bg 与各关 icon 生成图）
